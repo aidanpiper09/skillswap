@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).changedKeys()
+          .hasOnly(['bio', 'offeredSkills', 'soughtSkills']);
+      allow delete: if false;
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.requesterId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /ratings/{ratingId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    match /clubs/{clubId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+
+      match /members/{memberId} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
+    }
+  }
+}
