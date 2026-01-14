@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onIdTokenChanged, getIdTokenResult } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
 import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home } from 'lucide-react';
 
@@ -32,6 +32,7 @@ export default function SkillSwap() {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState('login');
+  const [isAdmin, setIsAdmin] = useState(false);
   
   // Auth states
   const [email, setEmail] = useState('');
@@ -76,17 +77,21 @@ export default function SkillSwap() {
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+        const tokenResult = await getIdTokenResult(currentUser, true);
+        const hasAdminClaim = tokenResult?.claims?.admin === true;
+        setIsAdmin(hasAdminClaim);
         const profileDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (profileDoc.exists()) {
           setUserProfile(profileDoc.data());
-          setPage(profileDoc.data().role === 'admin' ? 'admin' : 'dashboard');
+          setPage(hasAdminClaim ? 'admin' : 'dashboard');
         } else {
           setPage('profile-setup');
         }
       } else {
+        setIsAdmin(false);
         setPage('login');
       }
       setLoading(false);
@@ -113,7 +118,7 @@ export default function SkillSwap() {
       setAllUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.id !== user.uid && u.role === 'student'));
     }
     
-    if (page === 'admin' && userProfile?.role === 'admin') {
+    if (page === 'admin' && isAdmin) {
       const usersSnap = await getDocs(collection(db, 'users'));
       setAdminUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       
@@ -177,6 +182,7 @@ export default function SkillSwap() {
   const handleLogout = async () => {
     await signOut(auth);
     setUserProfile(null);
+    setIsAdmin(false);
   };
 
   const updateProfile = async () => {
@@ -479,7 +485,7 @@ export default function SkillSwap() {
               </button>
             </div>
           )}
-          {userProfile?.role === 'admin' && (
+          {isAdmin && (
             <button onClick={() => setPage('admin')} className="flex items-center space-x-2 px-4 py-2 bg-orange-500 text-white rounded-lg">
               <Shield size={20} />
               <span>Admin Panel</span>
@@ -1072,7 +1078,7 @@ export default function SkillSwap() {
     );
   }
 
-  if (page === 'admin' && userProfile?.role === 'admin') {
+  if (page === 'admin' && isAdmin) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
         <Navigation />
