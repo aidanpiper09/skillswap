@@ -37,7 +37,6 @@ export default function SkillSwap() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState('student');
   const [gradYear, setGradYear] = useState('2026');
   const [isRegister, setIsRegister] = useState(false);
   
@@ -153,7 +152,7 @@ export default function SkillSwap() {
         await setDoc(doc(db, 'users', userCred.user.uid), {
           name,
           email,
-          role,
+          role: 'student',
           gradYear,
           createdAt: Timestamp.now(),
           offeredSkills: [],
@@ -400,14 +399,6 @@ export default function SkillSwap() {
                   className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
                   required
                 />
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
-                >
-                  <option value="student">Student</option>
-                  <option value="admin">Admin</option>
-                </select>
                 <input
                   type="number"
                   placeholder="Graduation Year"
