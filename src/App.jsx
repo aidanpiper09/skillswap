@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, arrayUnion } from 'firebase/firestore';
 import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home } from 'lucide-react';
 
 const firebaseConfig = {
@@ -37,7 +37,6 @@ export default function SkillSwap() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState('student');
   const [gradYear, setGradYear] = useState('2026');
   const [isRegister, setIsRegister] = useState(false);
   
@@ -47,6 +46,12 @@ export default function SkillSwap() {
   const [soughtSkills, setSoughtSkills] = useState([]);
   const [newSkill, setNewSkill] = useState('');
   const [skillType, setSkillType] = useState('offered');
+  const [isProfilePublic, setIsProfilePublic] = useState(true);
+  const [isMinor, setIsMinor] = useState(false);
+  const [profileVisibility, setProfileVisibility] = useState('students');
+  const [showInDirectory, setShowInDirectory] = useState(true);
+  const [allowSessionRequests, setAllowSessionRequests] = useState(true);
+  const [allowMessages, setAllowMessages] = useState(true);
   
   // Sessions states
   const [sessions, setSessions] = useState([]);
@@ -71,6 +76,12 @@ export default function SkillSwap() {
   const [adminSessions, setAdminSessions] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [stats, setStats] = useState({});
+
+  // Clubs / group sessions
+  const [clubs, setClubs] = useState([]);
+  const [newClubName, setNewClubName] = useState('');
+  const [newClubDescription, setNewClubDescription] = useState('');
+  const [newClubSchedule, setNewClubSchedule] = useState('');
   
   // Search
   const [searchTerm, setSearchTerm] = useState('');
@@ -81,7 +92,18 @@ export default function SkillSwap() {
       if (currentUser) {
         const profileDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (profileDoc.exists()) {
-          setUserProfile(profileDoc.data());
+          const profileData = profileDoc.data();
+          setUserProfile(profileData);
+          setBio(profileData.bio || '');
+          setOfferedSkills(profileData.offeredSkills || []);
+          setSoughtSkills(profileData.soughtSkills || []);
+          const isPublic = profileData.isProfilePublic ?? true;
+          setIsProfilePublic(isPublic);
+          setIsMinor(profileData.isMinor || false);
+          setProfileVisibility(profileData.profileVisibility || (isPublic ? 'public' : 'private'));
+          setShowInDirectory(profileData.showInDirectory ?? isPublic);
+          setAllowSessionRequests(profileData.allowSessionRequests ?? true);
+          setAllowMessages(profileData.allowMessages ?? true);
           setPage(profileDoc.data().role === 'admin' ? 'admin' : 'dashboard');
         } else {
           setPage('profile-setup');
@@ -100,6 +122,21 @@ export default function SkillSwap() {
     }
   }, [user, userProfile, page]);
 
+  useEffect(() => {
+    if (userProfile) {
+      setBio(userProfile.bio || '');
+      setOfferedSkills(userProfile.offeredSkills || []);
+      setSoughtSkills(userProfile.soughtSkills || []);
+      const isPublic = userProfile.isProfilePublic ?? true;
+      setIsProfilePublic(isPublic);
+      setIsMinor(userProfile.isMinor || false);
+      setProfileVisibility(userProfile.profileVisibility || (isPublic ? 'public' : 'private'));
+      setShowInDirectory(userProfile.showInDirectory ?? isPublic);
+      setAllowSessionRequests(userProfile.allowSessionRequests ?? true);
+      setAllowMessages(userProfile.allowMessages ?? true);
+    }
+  }, [userProfile]);
+
   const loadUserData = async () => {
     if (page === 'dashboard' || page === 'sessions') {
       const sessionsQuery = query(
@@ -110,7 +147,23 @@ export default function SkillSwap() {
       setSessions(sessionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       
       const usersSnap = await getDocs(collection(db, 'users'));
-      setAllUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.id !== user.uid && u.role === 'student'));
+      setAllUsers(
+        usersSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(u => {
+            if (u.id === user.uid || u.role !== 'student') return false;
+            const isPublic = u.isProfilePublic ?? true;
+            const visibility = u.profileVisibility || (isPublic ? 'public' : 'private');
+            const listed = u.showInDirectory ?? isPublic;
+            const canRequest = u.allowSessionRequests ?? true;
+            return listed && canRequest && visibility !== 'private';
+          })
+      );
+    }
+
+    if (page === 'clubs') {
+      const clubsSnap = await getDocs(query(collection(db, 'clubs'), orderBy('createdAt', 'desc')));
+      setClubs(clubsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }
     
     if (page === 'admin' && userProfile?.role === 'admin') {
@@ -145,6 +198,34 @@ export default function SkillSwap() {
     });
   };
 
+  const formatIcsDate = (date) => {
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
+  };
+
+  const buildCalendarLink = (session) => {
+    const sessionDate = session.startTime?.toDate?.() || new Date(session.startTime);
+    if (!sessionDate || Number.isNaN(sessionDate.valueOf())) return null;
+    const endDate = new Date(sessionDate.getTime() + 60 * 60 * 1000);
+    const description = `SkillSwap session for ${session.skill}.`;
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//SkillSwap//EN',
+      'BEGIN:VEVENT',
+      `UID:${session.id}@skillswap`,
+      `DTSTAMP:${formatIcsDate(new Date())}`,
+      `DTSTART:${formatIcsDate(sessionDate)}`,
+      `DTEND:${formatIcsDate(endDate)}`,
+      `SUMMARY:SkillSwap Session - ${session.skill}`,
+      `DESCRIPTION:${description}`,
+      session.location ? `LOCATION:${session.location}` : 'LOCATION:SkillSwap',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\n');
+    return `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`;
+  };
+
   const handleAuth = async (e) => {
     e.preventDefault();
     try {
@@ -153,13 +234,19 @@ export default function SkillSwap() {
         await setDoc(doc(db, 'users', userCred.user.uid), {
           name,
           email,
-          role,
+          role: 'student',
           gradYear,
           createdAt: Timestamp.now(),
           offeredSkills: [],
           soughtSkills: [],
           achievements: [],
-          sessionsCompleted: 0
+          sessionsCompleted: 0,
+          isProfilePublic: true,
+          isMinor: false,
+          profileVisibility: 'students',
+          showInDirectory: true,
+          allowSessionRequests: true,
+          allowMessages: true
         });
         await addDoc(collection(db, 'auditLogs'), {
           action: 'USER_REGISTERED',
@@ -184,9 +271,26 @@ export default function SkillSwap() {
       await updateDoc(doc(db, 'users', user.uid), {
         bio,
         offeredSkills,
-        soughtSkills
+        soughtSkills,
+        isProfilePublic,
+        isMinor,
+        profileVisibility,
+        showInDirectory,
+        allowSessionRequests,
+        allowMessages
       });
-      setUserProfile({ ...userProfile, bio, offeredSkills, soughtSkills });
+      setUserProfile({
+        ...userProfile,
+        bio,
+        offeredSkills,
+        soughtSkills,
+        isProfilePublic,
+        isMinor,
+        profileVisibility,
+        showInDirectory,
+        allowSessionRequests,
+        allowMessages
+      });
       alert('Profile updated!');
     } catch (error) {
       alert(error.message);
@@ -206,6 +310,11 @@ export default function SkillSwap() {
   const requestSession = async () => {
     if (!selectedUser || !sessionSkill || !sessionDate || !sessionTime) {
       alert('Please fill all fields');
+      return;
+    }
+
+    if (selectedUser.allowSessionRequests === false) {
+      alert('This user is not accepting session requests right now.');
       return;
     }
     
@@ -236,6 +345,42 @@ export default function SkillSwap() {
       setSessionDate('');
       setSessionTime('');
       setSessionLocation('');
+      loadUserData();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const createClub = async () => {
+    if (!newClubName.trim() || !newClubDescription.trim()) {
+      alert('Please provide a club name and description.');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'clubs'), {
+        name: newClubName.trim(),
+        description: newClubDescription.trim(),
+        schedule: newClubSchedule.trim(),
+        ownerId: user.uid,
+        ownerName: userProfile.name,
+        members: [user.uid],
+        createdAt: Timestamp.now()
+      });
+      setNewClubName('');
+      setNewClubDescription('');
+      setNewClubSchedule('');
+      loadUserData();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const joinClub = async (clubId) => {
+    try {
+      await updateDoc(doc(db, 'clubs', clubId), {
+        members: arrayUnion(user.uid)
+      });
       loadUserData();
     } catch (error) {
       alert(error.message);
@@ -328,6 +473,10 @@ export default function SkillSwap() {
 
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedSession) return;
+    if (!allowMessages) {
+      alert('You have messaging disabled in your privacy settings.');
+      return;
+    }
     
     try {
       await addDoc(collection(db, 'messages'), {
@@ -400,14 +549,6 @@ export default function SkillSwap() {
                   className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
                   required
                 />
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
-                >
-                  <option value="student">Student</option>
-                  <option value="admin">Admin</option>
-                </select>
                 <input
                   type="number"
                   placeholder="Graduation Year"
@@ -476,6 +617,10 @@ export default function SkillSwap() {
               <button onClick={() => setPage('profile')} className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition ${page === 'profile' ? 'bg-orange-500 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
                 <User size={20} />
                 <span>Profile</span>
+              </button>
+              <button onClick={() => setPage('clubs')} className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition ${page === 'clubs' ? 'bg-blue-500 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
+                <Users size={20} />
+                <span>Clubs</span>
               </button>
             </div>
           )}
@@ -765,6 +910,15 @@ export default function SkillSwap() {
                       {session.startTime?.toDate?.()?.toLocaleString()}
                     </p>
                     <p className="text-xs text-blue-400 mt-1">📍 {session.location}</p>
+                    {buildCalendarLink(session) && (
+                      <a
+                        href={buildCalendarLink(session)}
+                        download={`skillswap-${session.skill}-session.ics`}
+                        className="inline-flex items-center text-xs text-orange-300 hover:text-orange-200 mt-2"
+                      >
+                        📅 Add to calendar
+                      </a>
+                    )}
                     <div className="flex space-x-2 mt-3">
                       <button
                         onClick={() => {
@@ -830,6 +984,92 @@ export default function SkillSwap() {
     );
   }
 
+  if (page === 'clubs') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
+        <Navigation />
+
+        <div className="max-w-6xl mx-auto p-6">
+          <h2 className="text-3xl font-bold text-white mb-6">Clubs & Group Sessions</h2>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div className="lg:col-span-1 bg-gray-800 p-6 rounded-lg border border-blue-500">
+              <h3 className="text-xl font-bold text-blue-400 mb-4">Start a Club</h3>
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  value={newClubName}
+                  onChange={(e) => setNewClubName(e.target.value)}
+                  placeholder="Club name"
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                />
+                <textarea
+                  value={newClubDescription}
+                  onChange={(e) => setNewClubDescription(e.target.value)}
+                  placeholder="Describe the group session focus..."
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none h-28"
+                />
+                <input
+                  type="text"
+                  value={newClubSchedule}
+                  onChange={(e) => setNewClubSchedule(e.target.value)}
+                  placeholder="Schedule (e.g., Wednesdays 4pm)"
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                />
+                <button
+                  onClick={createClub}
+                  className="w-full py-3 bg-gradient-to-r from-blue-500 to-orange-500 text-white font-bold rounded-lg hover:from-blue-600 hover:to-orange-600 transition"
+                >
+                  Create Club
+                </button>
+              </div>
+            </div>
+
+            <div className="lg:col-span-2 bg-gray-800 p-6 rounded-lg border border-orange-500">
+              <h3 className="text-xl font-bold text-orange-400 mb-4">Discover Clubs</h3>
+              <div className="space-y-4">
+                {clubs.map((club) => {
+                  const isMember = club.members?.includes(user.uid);
+                  return (
+                    <div key={club.id} className="bg-gray-700 p-4 rounded-lg">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-white font-semibold text-lg">{club.name}</p>
+                          <p className="text-gray-300 text-sm mt-1">{club.description}</p>
+                          {club.schedule && (
+                            <p className="text-xs text-blue-300 mt-2">📅 {club.schedule}</p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-1">
+                            Host: {club.ownerName} · Members: {club.members?.length || 0}
+                          </p>
+                        </div>
+                        <div className="ml-4">
+                          {isMember ? (
+                            <span className="px-3 py-1 bg-green-500 text-white rounded-full text-xs">Member</span>
+                          ) : (
+                            <button
+                              onClick={() => joinClub(club.id)}
+                              className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-sm"
+                            >
+                              Join
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {clubs.length === 0 && (
+                  <p className="text-gray-500 text-center py-6">No clubs yet. Start the first group session!</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (page === 'messages' && selectedSession) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
@@ -873,15 +1113,20 @@ export default function SkillSwap() {
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                 placeholder="Type a message..."
-                className="flex-1 px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                disabled={!allowMessages}
+                className={`flex-1 px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none ${!allowMessages ? 'opacity-60 cursor-not-allowed' : ''}`}
               />
               <button
                 onClick={sendMessage}
-                className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-semibold"
+                disabled={!allowMessages}
+                className={`px-6 py-3 rounded-lg transition font-semibold ${allowMessages ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-600 text-gray-300 cursor-not-allowed'}`}
               >
                 Send
               </button>
             </div>
+            {!allowMessages && (
+              <p className="text-xs text-yellow-400 mt-2">Messaging is disabled in your privacy settings.</p>
+            )}
           </div>
         </div>
       </div>
@@ -969,6 +1214,94 @@ export default function SkillSwap() {
                   placeholder="Tell others about yourself..."
                   className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none h-24"
                 />
+              </div>
+
+              <div className="bg-gray-700 p-4 rounded-lg space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white font-semibold">Privacy Settings</p>
+                    <p className="text-xs text-gray-400">Manage how others can discover and contact you.</p>
+                  </div>
+                </div>
+
+                <label className="flex items-center justify-between text-sm text-gray-200">
+                  <span>I am under 18</span>
+                  <input
+                    type="checkbox"
+                    checked={isMinor}
+                    onChange={(e) => {
+                      const isChecked = e.target.checked;
+                      setIsMinor(isChecked);
+                      if (isChecked) {
+                        setProfileVisibility('private');
+                        setShowInDirectory(false);
+                        setAllowSessionRequests(false);
+                        setAllowMessages(false);
+                        setIsProfilePublic(false);
+                      } else {
+                        setProfileVisibility('students');
+                        setShowInDirectory(true);
+                        setAllowSessionRequests(true);
+                        setAllowMessages(true);
+                        setIsProfilePublic(true);
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-gray-500 text-orange-500 focus:ring-orange-500"
+                  />
+                </label>
+
+                <div>
+                  <label className="block text-xs text-gray-400 mb-2">Profile visibility</label>
+                  <select
+                    value={profileVisibility}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      setProfileVisibility(nextValue);
+                      const isPublic = nextValue !== 'private';
+                      setIsProfilePublic(isPublic);
+                      if (nextValue === 'private') {
+                        setShowInDirectory(false);
+                        setAllowSessionRequests(false);
+                        setAllowMessages(false);
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="public">Public</option>
+                    <option value="students">Students only</option>
+                    <option value="private">Private</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                  <label className="flex items-center justify-between bg-gray-800 px-3 py-2 rounded-lg">
+                    <span className="text-gray-200">List in directory</span>
+                    <input
+                      type="checkbox"
+                      checked={showInDirectory}
+                      onChange={(e) => setShowInDirectory(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-500 text-orange-500 focus:ring-orange-500"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between bg-gray-800 px-3 py-2 rounded-lg">
+                    <span className="text-gray-200">Allow requests</span>
+                    <input
+                      type="checkbox"
+                      checked={allowSessionRequests}
+                      onChange={(e) => setAllowSessionRequests(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-500 text-orange-500 focus:ring-orange-500"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between bg-gray-800 px-3 py-2 rounded-lg">
+                    <span className="text-gray-200">Allow messages</span>
+                    <input
+                      type="checkbox"
+                      checked={allowMessages}
+                      onChange={(e) => setAllowMessages(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-500 text-orange-500 focus:ring-orange-500"
+                    />
+                  </label>
+                </div>
               </div>
               
               <button
