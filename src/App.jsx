@@ -14,6 +14,7 @@ const firebaseConfig = {
   measurementId: "G-L3GP4JCBPR"
 };
 
+// Firebase bootstrap: shared service handles auth + Firestore reads/writes.
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -28,6 +29,7 @@ const ACHIEVEMENTS = [
 ];
 
 export default function SkillSwap() {
+  // Core UI state: controls auth routing and major view selection.
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -76,6 +78,7 @@ export default function SkillSwap() {
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
+    // Auth bootstrap: derive profile + landing page from Firebase auth state.
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
@@ -95,12 +98,14 @@ export default function SkillSwap() {
   }, []);
 
   useEffect(() => {
+    // Data refresh when navigating between major sections or after auth resolution.
     if (user && userProfile) {
       loadUserData();
     }
   }, [user, userProfile, page]);
 
   const loadUserData = async () => {
+    // Dashboard and sessions share the same data sources: user's sessions + peer list.
     if (page === 'dashboard' || page === 'sessions') {
       const sessionsQuery = query(
         collection(db, 'sessions'),
@@ -113,6 +118,7 @@ export default function SkillSwap() {
       setAllUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.id !== user.uid && u.role === 'student'));
     }
     
+    // Admin-only aggregation: full user list, all sessions, audit log history.
     if (page === 'admin' && userProfile?.role === 'admin') {
       const usersSnap = await getDocs(collection(db, 'users'));
       setAdminUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -127,6 +133,7 @@ export default function SkillSwap() {
     }
   };
 
+  // Stats module: compute admin dashboard counts and top skills list.
   const calculateStats = (users, sessions) => {
     const skillCounts = {};
     const ratingsBySkill = {};
@@ -149,6 +156,7 @@ export default function SkillSwap() {
     e.preventDefault();
     try {
       if (isRegister) {
+        // Registration path: write user profile + audit log entry.
         const userCred = await createUserWithEmailAndPassword(auth, email, password);
         await setDoc(doc(db, 'users', userCred.user.uid), {
           name,
@@ -167,6 +175,7 @@ export default function SkillSwap() {
           timestamp: Timestamp.now()
         });
       } else {
+        // Login path: Firebase handles auth; UI will rehydrate via auth listener.
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (error) {
@@ -179,6 +188,7 @@ export default function SkillSwap() {
     setUserProfile(null);
   };
 
+  // Profile module: update bio and skills arrays.
   const updateProfile = async () => {
     try {
       await updateDoc(doc(db, 'users', user.uid), {
@@ -193,6 +203,7 @@ export default function SkillSwap() {
     }
   };
 
+  // Skill editor: locally accumulate new offered/sought skills.
   const addSkill = () => {
     if (!newSkill.trim()) return;
     if (skillType === 'offered') {
@@ -203,6 +214,7 @@ export default function SkillSwap() {
     setNewSkill('');
   };
 
+  // Session request flow: validates input, writes session + audit log.
   const requestSession = async () => {
     if (!selectedUser || !sessionSkill || !sessionDate || !sessionTime) {
       alert('Please fill all fields');
@@ -242,6 +254,7 @@ export default function SkillSwap() {
     }
   };
 
+  // Session lifecycle updates: status change, completion triggers achievements.
   const updateSessionStatus = async (sessionId, status) => {
     try {
       await updateDoc(doc(db, 'sessions', sessionId), { status });
@@ -269,6 +282,7 @@ export default function SkillSwap() {
     }
   };
 
+  // Achievements module: milestone-based awards stored on user profile.
   const checkAchievements = async (sessionCount) => {
     const newAchievements = [];
     
@@ -293,6 +307,7 @@ export default function SkillSwap() {
     }
   };
 
+  // Ratings module: store rating + award five-star achievement when applicable.
   const submitRating = async (sessionId) => {
     try {
       const session = sessions.find(s => s.id === sessionId);
@@ -326,6 +341,7 @@ export default function SkillSwap() {
     }
   };
 
+  // Messaging module: write message scoped to selected session.
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedSession) return;
     
@@ -345,6 +361,7 @@ export default function SkillSwap() {
     }
   };
 
+  // Messaging module: fetch chat history for the session in time order.
   const loadMessages = async (sessionId) => {
     const messagesQuery = query(
       collection(db, 'messages'),
@@ -355,6 +372,7 @@ export default function SkillSwap() {
     setMessages(messagesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   };
 
+  // Admin action: delete user and record audit log entry.
   const deleteUser = async (userId) => {
     if (!window.confirm('Delete this user?')) return;
     
