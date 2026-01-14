@@ -578,6 +578,8 @@ export default function SkillSwap() {
     if (!window.confirm('Delete this user?')) return;
     
     try {
+      const deleteUserAndData = httpsCallable(functions, 'deleteUserAndData');
+      await deleteUserAndData({ userId });
       const deleteUserCascade = httpsCallable(functions, 'deleteUserCascade');
       await deleteUserCascade({ userId });
       loadUserData();
