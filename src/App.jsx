@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home } from 'lucide-react';
 
 const firebaseConfig = {
@@ -17,6 +18,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app);
 
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
@@ -74,6 +76,13 @@ export default function SkillSwap() {
   
   // Search
   const [searchTerm, setSearchTerm] = useState('');
+
+  const logAuditEvent = async (payload) => {
+    const logAuditEventCallable = httpsCallable(functions, 'logAuditEvent');
+    await logAuditEventCallable(payload);
+  };
+
+  const updateSessionStatusCallable = httpsCallable(functions, 'updateSessionStatus');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -161,11 +170,7 @@ export default function SkillSwap() {
           achievements: [],
           sessionsCompleted: 0
         });
-        await addDoc(collection(db, 'auditLogs'), {
-          action: 'USER_REGISTERED',
-          userId: userCred.user.uid,
-          timestamp: Timestamp.now()
-        });
+        await logAuditEvent({ action: 'USER_REGISTERED' });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
@@ -223,12 +228,7 @@ export default function SkillSwap() {
         createdAt: Timestamp.now()
       });
       
-      await addDoc(collection(db, 'auditLogs'), {
-        action: 'SESSION_REQUESTED',
-        userId: user.uid,
-        sessionId: sessionDoc.id,
-        timestamp: Timestamp.now()
-      });
+      await logAuditEvent({ action: 'SESSION_REQUESTED', sessionId: sessionDoc.id });
       
       alert('Session requested!');
       setSelectedUser(null);
@@ -244,7 +244,7 @@ export default function SkillSwap() {
 
   const updateSessionStatus = async (sessionId, status) => {
     try {
-      await updateDoc(doc(db, 'sessions', sessionId), { status });
+      await updateSessionStatusCallable({ sessionId, status });
       
       if (status === 'completed') {
         const session = sessions.find(s => s.id === sessionId);
@@ -255,13 +255,6 @@ export default function SkillSwap() {
         
         checkAchievements(newCount);
       }
-      
-      await addDoc(collection(db, 'auditLogs'), {
-        action: `SESSION_${status.toUpperCase()}`,
-        userId: user.uid,
-        sessionId,
-        timestamp: Timestamp.now()
-      });
       
       loadUserData();
     } catch (error) {
@@ -360,12 +353,7 @@ export default function SkillSwap() {
     
     try {
       await deleteDoc(doc(db, 'users', userId));
-      await addDoc(collection(db, 'auditLogs'), {
-        action: 'USER_DELETED',
-        userId: user.uid,
-        targetUserId: userId,
-        timestamp: Timestamp.now()
-      });
+      await logAuditEvent({ action: 'USER_DELETED', targetUserId: userId });
       loadUserData();
     } catch (error) {
       alert(error.message);
@@ -1137,7 +1125,7 @@ export default function SkillSwap() {
                   <div key={log.id} className="bg-gray-700 p-3 rounded-lg text-sm">
                     <p className="text-white font-semibold">{log.action}</p>
                     <p className="text-gray-400 text-xs">
-                      {log.timestamp?.toDate?.()?.toLocaleString()}
+                      {(log.createdAt || log.timestamp)?.toDate?.()?.toLocaleString()}
                     </p>
                   </div>
                 ))}
