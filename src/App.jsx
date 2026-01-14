@@ -18,6 +18,88 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+const MAX_SKILLS = 12;
+const MAX_BIO_LENGTH = 280;
+const MAX_MESSAGE_LENGTH = 500;
+const MAX_RATING_COMMENT_LENGTH = 300;
+const MAX_CLUB_DESCRIPTION_LENGTH = 500;
+const MAX_CLUB_FIELD_LENGTH = 120;
+const SKILL_NAME_PATTERN = /^[A-Za-z0-9 .&+'-]{2,40}$/;
+
+const validateSkillName = (skillName) => {
+  const trimmed = skillName.trim();
+  if (!trimmed) return 'Skill name is required.';
+  if (!SKILL_NAME_PATTERN.test(trimmed)) {
+    return 'Skill names must be 2-40 characters and can include letters, numbers, spaces, and . & + \' -.';
+  }
+  return '';
+};
+
+const validateSkillList = (skills, label) => {
+  if (skills.length > MAX_SKILLS) {
+    return `Limit ${label} skills to ${MAX_SKILLS}.`;
+  }
+  for (const skill of skills) {
+    const error = validateSkillName(skill.name || '');
+    if (error) {
+      return `${label} skill error: ${error}`;
+    }
+  }
+  return '';
+};
+
+const validateBio = (bioText) => {
+  if (bioText.length > MAX_BIO_LENGTH) {
+    return `Bio must be ${MAX_BIO_LENGTH} characters or less.`;
+  }
+  return '';
+};
+
+const validateMessage = (messageText) => {
+  const trimmed = messageText.trim();
+  if (!trimmed) return 'Message cannot be empty.';
+  if (trimmed.length > MAX_MESSAGE_LENGTH) {
+    return `Message must be ${MAX_MESSAGE_LENGTH} characters or less.`;
+  }
+  return '';
+};
+
+const validateRating = (score, comment) => {
+  if (score < 1 || score > 5) {
+    return 'Rating must be between 1 and 5.';
+  }
+  if (comment.trim().length > MAX_RATING_COMMENT_LENGTH) {
+    return `Rating comment must be ${MAX_RATING_COMMENT_LENGTH} characters or less.`;
+  }
+  return '';
+};
+
+const validateClubDetails = (details) => {
+  if (!details.name.trim()) return 'Club name is required.';
+  if (details.name.trim().length < 2 || details.name.trim().length > 60) {
+    return 'Club name must be 2-60 characters.';
+  }
+  if (details.description.trim().length > MAX_CLUB_DESCRIPTION_LENGTH) {
+    return `Club description must be ${MAX_CLUB_DESCRIPTION_LENGTH} characters or less.`;
+  }
+  if (details.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details.contactEmail)) {
+    return 'Club contact email must be valid.';
+  }
+  if (details.meetingLocation.trim().length > MAX_CLUB_FIELD_LENGTH) {
+    return `Meeting location must be ${MAX_CLUB_FIELD_LENGTH} characters or less.`;
+  }
+  if (details.meetingSchedule.trim().length > MAX_CLUB_FIELD_LENGTH) {
+    return `Meeting schedule must be ${MAX_CLUB_FIELD_LENGTH} characters or less.`;
+  }
+  return '';
+};
+
+const isSecureContext = () => {
+  if (typeof window === 'undefined') return true;
+  if (window.location.protocol === 'https:') return true;
+  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+};
+
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
   { id: 'five_sessions', name: 'Getting Started', description: 'Complete 5 sessions', icon: '🌟' },
@@ -32,6 +114,7 @@ export default function SkillSwap() {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState('login');
+  const [secureTransport, setSecureTransport] = useState(true);
   
   // Auth states
   const [email, setEmail] = useState('');
@@ -47,6 +130,9 @@ export default function SkillSwap() {
   const [soughtSkills, setSoughtSkills] = useState([]);
   const [newSkill, setNewSkill] = useState('');
   const [skillType, setSkillType] = useState('offered');
+  const [profileVisibility, setProfileVisibility] = useState('members');
+  const [allowRequestsFrom, setAllowRequestsFrom] = useState('anyone');
+  const [allowMessagesFrom, setAllowMessagesFrom] = useState('participants');
   
   // Sessions states
   const [sessions, setSessions] = useState([]);
@@ -71,9 +157,20 @@ export default function SkillSwap() {
   const [adminSessions, setAdminSessions] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [stats, setStats] = useState({});
+  const [clubDetails, setClubDetails] = useState({
+    name: '',
+    description: '',
+    contactEmail: '',
+    meetingLocation: '',
+    meetingSchedule: ''
+  });
   
   // Search
   const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    setSecureTransport(isSecureContext());
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -100,6 +197,17 @@ export default function SkillSwap() {
     }
   }, [user, userProfile, page]);
 
+  useEffect(() => {
+    if (userProfile) {
+      setBio(userProfile.bio || '');
+      setOfferedSkills(userProfile.offeredSkills || []);
+      setSoughtSkills(userProfile.soughtSkills || []);
+      setProfileVisibility(userProfile.profileVisibility || 'members');
+      setAllowRequestsFrom(userProfile.allowRequestsFrom || 'anyone');
+      setAllowMessagesFrom(userProfile.allowMessagesFrom || 'participants');
+    }
+  }, [userProfile]);
+
   const loadUserData = async () => {
     if (page === 'dashboard' || page === 'sessions') {
       const sessionsQuery = query(
@@ -109,8 +217,16 @@ export default function SkillSwap() {
       const sessionsSnap = await getDocs(sessionsQuery);
       setSessions(sessionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       
-      const usersSnap = await getDocs(collection(db, 'users'));
-      setAllUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.id !== user.uid && u.role === 'student'));
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('profileVisibility', 'in', ['public', 'members'])
+      );
+      const usersSnap = await getDocs(usersQuery);
+      setAllUsers(
+        usersSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(u => u.id !== user.uid && u.role === 'student')
+      );
     }
     
     if (page === 'admin' && userProfile?.role === 'admin') {
@@ -122,6 +238,17 @@ export default function SkillSwap() {
       
       const logsSnap = await getDocs(query(collection(db, 'auditLogs'), orderBy('createdAt', 'desc')));
       setAuditLogs(logsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      const clubDoc = await getDoc(doc(db, 'clubDetails', 'main'));
+      if (clubDoc.exists()) {
+        setClubDetails({
+          name: clubDoc.data().name || '',
+          description: clubDoc.data().description || '',
+          contactEmail: clubDoc.data().contactEmail || '',
+          meetingLocation: clubDoc.data().meetingLocation || '',
+          meetingSchedule: clubDoc.data().meetingSchedule || ''
+        });
+      }
       
       calculateStats(usersSnap.docs, sessionsSnap.docs);
     }
@@ -158,8 +285,12 @@ export default function SkillSwap() {
           createdAt: Timestamp.now(),
           offeredSkills: [],
           soughtSkills: [],
+          bio: '',
           achievements: [],
-          sessionsCompleted: 0
+          sessionsCompleted: 0,
+          profileVisibility: 'members',
+          allowRequestsFrom: 'anyone',
+          allowMessagesFrom: 'participants'
         });
         await addDoc(collection(db, 'auditLogs'), {
           action: 'USER_REGISTERED',
@@ -181,12 +312,38 @@ export default function SkillSwap() {
 
   const updateProfile = async () => {
     try {
+      const bioError = validateBio(bio);
+      if (bioError) {
+        alert(bioError);
+        return;
+      }
+      const offeredError = validateSkillList(offeredSkills, 'Offered');
+      if (offeredError) {
+        alert(offeredError);
+        return;
+      }
+      const soughtError = validateSkillList(soughtSkills, 'Sought');
+      if (soughtError) {
+        alert(soughtError);
+        return;
+      }
       await updateDoc(doc(db, 'users', user.uid), {
         bio,
         offeredSkills,
-        soughtSkills
+        soughtSkills,
+        profileVisibility,
+        allowRequestsFrom,
+        allowMessagesFrom
       });
-      setUserProfile({ ...userProfile, bio, offeredSkills, soughtSkills });
+      setUserProfile({
+        ...userProfile,
+        bio,
+        offeredSkills,
+        soughtSkills,
+        profileVisibility,
+        allowRequestsFrom,
+        allowMessagesFrom
+      });
       alert('Profile updated!');
     } catch (error) {
       alert(error.message);
@@ -194,11 +351,24 @@ export default function SkillSwap() {
   };
 
   const addSkill = () => {
-    if (!newSkill.trim()) return;
+    const error = validateSkillName(newSkill);
+    if (error) {
+      alert(error);
+      return;
+    }
+    const currentSkills = skillType === 'offered' ? offeredSkills : soughtSkills;
+    if (currentSkills.length >= MAX_SKILLS) {
+      alert(`You can only add up to ${MAX_SKILLS} skills.`);
+      return;
+    }
+    if (currentSkills.some(skill => skill.name.toLowerCase() === newSkill.trim().toLowerCase())) {
+      alert('That skill is already listed.');
+      return;
+    }
     if (skillType === 'offered') {
-      setOfferedSkills([...offeredSkills, { name: newSkill, proficiency: 'intermediate' }]);
+      setOfferedSkills([...offeredSkills, { name: newSkill.trim(), proficiency: 'intermediate' }]);
     } else {
-      setSoughtSkills([...soughtSkills, { name: newSkill, interest: 'high' }]);
+      setSoughtSkills([...soughtSkills, { name: newSkill.trim(), interest: 'high' }]);
     }
     setNewSkill('');
   };
@@ -208,6 +378,20 @@ export default function SkillSwap() {
       alert('Please fill all fields');
       return;
     }
+
+    const skillError = validateSkillName(sessionSkill);
+    if (skillError) {
+      alert(skillError);
+      return;
+    }
+    if (sessionLocation && sessionLocation.trim().length > MAX_CLUB_FIELD_LENGTH) {
+      alert(`Location must be ${MAX_CLUB_FIELD_LENGTH} characters or less.`);
+      return;
+    }
+    if (selectedUser.allowRequestsFrom === 'none') {
+      alert('This user is not accepting session requests.');
+      return;
+    }
     
     try {
       const sessionDoc = await addDoc(collection(db, 'sessions'), {
@@ -215,9 +399,9 @@ export default function SkillSwap() {
         requesterName: userProfile.name,
         providerId: selectedUser.id,
         providerName: selectedUser.name,
-        skill: sessionSkill,
+        skill: sessionSkill.trim(),
         startTime: new Date(`${sessionDate}T${sessionTime}`),
-        location: sessionLocation,
+        location: sessionLocation.trim(),
         status: 'pending',
         participants: [user.uid, selectedUser.id],
         createdAt: Timestamp.now()
@@ -296,6 +480,15 @@ export default function SkillSwap() {
   const submitRating = async (sessionId) => {
     try {
       const session = sessions.find(s => s.id === sessionId);
+      if (!session) {
+        alert('Session not found.');
+        return;
+      }
+      const ratingError = validateRating(ratingScore, ratingComment);
+      if (ratingError) {
+        alert(ratingError);
+        return;
+      }
       const rateeId = session.requesterId === user.uid ? session.providerId : session.requesterId;
       
       await addDoc(collection(db, 'ratings'), {
@@ -303,7 +496,7 @@ export default function SkillSwap() {
         raterId: user.uid,
         rateeId,
         score: ratingScore,
-        comment: ratingComment,
+        comment: ratingComment.trim(),
         createdAt: Timestamp.now()
       });
       
@@ -327,14 +520,27 @@ export default function SkillSwap() {
   };
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedSession) return;
+    if (!selectedSession) return;
+    if (allowMessagesFrom === 'none') {
+      alert('Your privacy settings do not allow sending messages.');
+      return;
+    }
+    const messageError = validateMessage(newMessage);
+    if (messageError) {
+      alert(messageError);
+      return;
+    }
+    if (selectedSession.participants && !selectedSession.participants.includes(user.uid)) {
+      alert('You do not have permission to message this session.');
+      return;
+    }
     
     try {
       await addDoc(collection(db, 'messages'), {
         sessionId: selectedSession.id,
         fromUserId: user.uid,
         fromName: userProfile.name,
-        body: newMessage,
+        body: newMessage.trim(),
         createdAt: Timestamp.now()
       });
       
@@ -372,10 +578,45 @@ export default function SkillSwap() {
     }
   };
 
+  const saveClubDetails = async () => {
+    const error = validateClubDetails(clubDetails);
+    if (error) {
+      alert(error);
+      return;
+    }
+    try {
+      await setDoc(doc(db, 'clubDetails', 'main'), {
+        name: clubDetails.name.trim(),
+        description: clubDetails.description.trim(),
+        contactEmail: clubDetails.contactEmail.trim(),
+        meetingLocation: clubDetails.meetingLocation.trim(),
+        meetingSchedule: clubDetails.meetingSchedule.trim(),
+        updatedAt: Timestamp.now(),
+        updatedBy: user.uid
+      });
+      alert('Club details updated!');
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex items-center justify-center">
         <div className="text-white text-2xl">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!secureTransport && import.meta.env.PROD) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex items-center justify-center p-6">
+        <div className="bg-gray-800 border border-red-500 rounded-2xl p-8 max-w-lg text-center">
+          <h1 className="text-2xl font-bold text-red-400 mb-4">Secure Connection Required</h1>
+          <p className="text-gray-300">
+            Please access SkillSwap over HTTPS to protect your data in transit.
+          </p>
+        </div>
       </div>
     );
   }
@@ -969,6 +1210,46 @@ export default function SkillSwap() {
                   placeholder="Tell others about yourself..."
                   className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none h-24"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  {bio.length}/{MAX_BIO_LENGTH} characters
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-gray-400 mb-2">Profile Visibility</label>
+                  <select
+                    value={profileVisibility}
+                    onChange={(e) => setProfileVisibility(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="public">Public</option>
+                    <option value="members">Members Only</option>
+                    <option value="private">Private</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-gray-400 mb-2">Session Requests</label>
+                  <select
+                    value={allowRequestsFrom}
+                    onChange={(e) => setAllowRequestsFrom(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="anyone">Allow from anyone</option>
+                    <option value="none">Do not allow</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-gray-400 mb-2">Messages</label>
+                  <select
+                    value={allowMessagesFrom}
+                    onChange={(e) => setAllowMessagesFrom(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="participants">Session participants only</option>
+                    <option value="none">Do not allow</option>
+                  </select>
+                </div>
               </div>
               
               <button
@@ -985,7 +1266,7 @@ export default function SkillSwap() {
               <h3 className="text-xl font-bold text-orange-400 mb-4">Skills I Offer</h3>
               
               <div className="mb-4 space-y-2">
-                {(offeredSkills.length > 0 ? offeredSkills : userProfile?.offeredSkills || []).map((skill, idx) => (
+                {offeredSkills.map((skill, idx) => (
                   <div key={idx} className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
                     <span className="text-white">{skill.name}</span>
                     <button
@@ -1028,7 +1309,7 @@ export default function SkillSwap() {
               <h3 className="text-xl font-bold text-blue-400 mb-4">Skills I Want to Learn</h3>
               
               <div className="mb-4 space-y-2">
-                {(soughtSkills.length > 0 ? soughtSkills : userProfile?.soughtSkills || []).map((skill, idx) => (
+                {soughtSkills.map((skill, idx) => (
                   <div key={idx} className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
                     <span className="text-white">{skill.name}</span>
                     <button
@@ -1143,6 +1424,73 @@ export default function SkillSwap() {
                 ))}
               </div>
             </div>
+          </div>
+
+          <div className="bg-gray-800 p-6 rounded-lg border border-blue-500 mb-6">
+            <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+              <Users className="mr-2 text-blue-400" />
+              Club Details
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-gray-400 mb-2">Club Name</label>
+                <input
+                  type="text"
+                  value={clubDetails.name}
+                  onChange={(e) => setClubDetails({ ...clubDetails, name: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  placeholder="SkillSwap Club"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-400 mb-2">Contact Email</label>
+                <input
+                  type="email"
+                  value={clubDetails.contactEmail}
+                  onChange={(e) => setClubDetails({ ...clubDetails, contactEmail: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  placeholder="club@school.edu"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-400 mb-2">Meeting Location</label>
+                <input
+                  type="text"
+                  value={clubDetails.meetingLocation}
+                  onChange={(e) => setClubDetails({ ...clubDetails, meetingLocation: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  placeholder="Room 204"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-400 mb-2">Meeting Schedule</label>
+                <input
+                  type="text"
+                  value={clubDetails.meetingSchedule}
+                  onChange={(e) => setClubDetails({ ...clubDetails, meetingSchedule: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  placeholder="Wednesdays at 3:30 PM"
+                />
+              </div>
+            </div>
+            <div className="mb-4">
+              <label className="block text-gray-400 mb-2">Description</label>
+              <textarea
+                value={clubDetails.description}
+                onChange={(e) => setClubDetails({ ...clubDetails, description: e.target.value })}
+                className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none h-28"
+                placeholder="Share the mission of the club..."
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {clubDetails.description.length}/{MAX_CLUB_DESCRIPTION_LENGTH} characters
+              </p>
+            </div>
+            <button
+              onClick={saveClubDetails}
+              className="w-full md:w-auto px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-semibold"
+            >
+              Save Club Details
+            </button>
           </div>
 
           <div className="bg-gray-800 p-6 rounded-lg border border-orange-500">
