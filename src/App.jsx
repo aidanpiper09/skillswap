@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home } from 'lucide-react';
 
 const firebaseConfig = {
@@ -17,6 +18,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app);
 
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
@@ -68,9 +70,15 @@ export default function SkillSwap() {
   
   // Admin states
   const [adminUsers, setAdminUsers] = useState([]);
-  const [adminSessions, setAdminSessions] = useState([]);
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [stats, setStats] = useState({});
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalSessions: 0,
+    activeSessions: 0,
+    pendingSessions: 0,
+    topSkills: [],
+    ratingsSummary: null,
+    recentActivity: []
+  });
   
   // Search
   const [searchTerm, setSearchTerm] = useState('');
@@ -116,33 +124,37 @@ export default function SkillSwap() {
     if (page === 'admin' && userProfile?.role === 'admin') {
       const usersSnap = await getDocs(collection(db, 'users'));
       setAdminUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      
-      const sessionsSnap = await getDocs(collection(db, 'sessions'));
-      setAdminSessions(sessionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      
-      const logsSnap = await getDocs(query(collection(db, 'auditLogs'), orderBy('createdAt', 'desc')));
-      setAuditLogs(logsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      
-      calculateStats(usersSnap.docs, sessionsSnap.docs);
+
+      await fetchAdminReports(usersSnap.docs.length);
     }
   };
 
-  const calculateStats = (users, sessions) => {
-    const skillCounts = {};
-    const ratingsBySkill = {};
-    
-    sessions.forEach(s => {
-      const session = s.data();
-      if (session.skill) {
-        skillCounts[session.skill] = (skillCounts[session.skill] || 0) + 1;
-      }
-    });
-    
-    setStats({
-      totalUsers: users.length,
-      totalSessions: sessions.length,
-      topSkills: Object.entries(skillCounts).sort((a, b) => b[1] - a[1]).slice(0, 5)
-    });
+  const fetchAdminReports = async (totalUsers) => {
+    try {
+      const sessionCountsCallable = httpsCallable(functions, 'getAdminSessionCounts');
+      const ratingsSummaryCallable = httpsCallable(functions, 'getAdminRatingsSummary');
+      const topSkillsCallable = httpsCallable(functions, 'getAdminTopSkills');
+      const recentActivityCallable = httpsCallable(functions, 'getAdminRecentActivity');
+
+      const [sessionCounts, ratingsSummary, topSkills, recentActivity] = await Promise.all([
+        sessionCountsCallable(),
+        ratingsSummaryCallable(),
+        topSkillsCallable(),
+        recentActivityCallable()
+      ]);
+
+      setStats({
+        totalUsers,
+        totalSessions: sessionCounts.data.totalSessions || 0,
+        activeSessions: sessionCounts.data.byStatus?.accepted || 0,
+        pendingSessions: sessionCounts.data.byStatus?.pending || 0,
+        topSkills: topSkills.data.topSkills || [],
+        ratingsSummary: ratingsSummary.data,
+        recentActivity: recentActivity.data.activity || []
+      });
+    } catch (error) {
+      console.error('Failed to load admin reports', error);
+    }
   };
 
   const handleAuth = async (e) => {
@@ -1095,25 +1107,25 @@ export default function SkillSwap() {
             <div className="bg-gray-800 p-6 rounded-lg border border-green-500">
               <p className="text-gray-400 text-sm">Active Sessions</p>
               <p className="text-3xl font-bold text-green-400">
-                {adminSessions.filter(s => s.status === 'accepted').length}
+                {stats.activeSessions || 0}
               </p>
             </div>
             <div className="bg-gray-800 p-6 rounded-lg border border-yellow-500">
               <p className="text-gray-400 text-sm">Pending Requests</p>
               <p className="text-3xl font-bold text-yellow-400">
-                {adminSessions.filter(s => s.status === 'pending').length}
+                {stats.pendingSessions || 0}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             <div className="bg-gray-800 p-6 rounded-lg border border-orange-500">
               <h3 className="text-xl font-bold text-white mb-4 flex items-center">
                 <TrendingUp className="mr-2 text-orange-400" />
                 Top Skills Requested
               </h3>
               <div className="space-y-3">
-                {stats.topSkills?.map(([skill, count], idx) => (
+                {stats.topSkills?.map(({ skill, count }, idx) => (
                   <div key={idx} className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
                     <span className="text-white font-semibold">{skill}</span>
                     <span className="px-3 py-1 bg-orange-500 text-white rounded-full text-sm">
@@ -1127,20 +1139,56 @@ export default function SkillSwap() {
               </div>
             </div>
 
+            <div className="bg-gray-800 p-6 rounded-lg border border-green-500">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+                <Star className="mr-2 text-green-400" />
+                Ratings Summary
+              </h3>
+              {stats.ratingsSummary ? (
+                <div className="space-y-3 text-sm text-gray-300">
+                  <div className="flex items-center justify-between">
+                    <span>Average Rating</span>
+                    <span className="font-semibold text-green-300">
+                      {stats.ratingsSummary.averageScore?.toFixed(2) || '0.00'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Total Ratings</span>
+                    <span className="font-semibold text-green-300">
+                      {stats.ratingsSummary.totalRatings || 0}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {[5, 4, 3, 2, 1].map(score => (
+                      <div key={score} className="flex items-center justify-between text-xs text-gray-400">
+                        <span>{score} stars</span>
+                        <span>{stats.ratingsSummary.scoreBreakdown?.[score] || 0}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-4">No ratings yet</p>
+              )}
+            </div>
+
             <div className="bg-gray-800 p-6 rounded-lg border border-blue-500">
               <h3 className="text-xl font-bold text-white mb-4 flex items-center">
                 <BarChart3 className="mr-2 text-blue-400" />
                 Recent Activity
               </h3>
               <div className="space-y-2 max-h-64 overflow-y-auto">
-                {auditLogs.slice(0, 10).map(log => (
+                {stats.recentActivity.map(log => (
                   <div key={log.id} className="bg-gray-700 p-3 rounded-lg text-sm">
                     <p className="text-white font-semibold">{log.action}</p>
                     <p className="text-gray-400 text-xs">
-                      {log.timestamp?.toDate?.()?.toLocaleString()}
+                      {log.timestamp ? new Date(log.timestamp).toLocaleString() : 'Unknown time'}
                     </p>
                   </div>
                 ))}
+                {stats.recentActivity.length === 0 && (
+                  <p className="text-gray-500 text-center py-4">No recent activity</p>
+                )}
               </div>
             </div>
           </div>
