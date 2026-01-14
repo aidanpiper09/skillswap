@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home } from 'lucide-react';
 
 const firebaseConfig = {
@@ -17,6 +18,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app);
 
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
@@ -244,24 +246,15 @@ export default function SkillSwap() {
 
   const updateSessionStatus = async (sessionId, status) => {
     try {
-      await updateDoc(doc(db, 'sessions', sessionId), { status });
+      const updateStatus = httpsCallable(functions, 'updateSessionStatus');
+      await updateStatus({ sessionId, status });
       
       if (status === 'completed') {
-        const session = sessions.find(s => s.id === sessionId);
-        const newCount = (userProfile.sessionsCompleted || 0) + 1;
-        await updateDoc(doc(db, 'users', user.uid), {
-          sessionsCompleted: newCount
-        });
-        
-        checkAchievements(newCount);
+        const userSnapshot = await getDoc(doc(db, 'users', user.uid));
+        const updatedCount = userSnapshot.data()?.sessionsCompleted || 0;
+        const updatedAchievements = userSnapshot.data()?.achievements || [];
+        await checkAchievements(updatedCount, updatedAchievements);
       }
-      
-      await addDoc(collection(db, 'auditLogs'), {
-        action: `SESSION_${status.toUpperCase()}`,
-        userId: user.uid,
-        sessionId,
-        timestamp: Timestamp.now()
-      });
       
       loadUserData();
     } catch (error) {
@@ -269,26 +262,26 @@ export default function SkillSwap() {
     }
   };
 
-  const checkAchievements = async (sessionCount) => {
+  const checkAchievements = async (sessionCount, existingAchievements = userProfile.achievements || []) => {
     const newAchievements = [];
     
-    if (sessionCount === 1 && !userProfile.achievements?.includes('first_session')) {
+    if (sessionCount === 1 && !existingAchievements.includes('first_session')) {
       newAchievements.push('first_session');
     }
-    if (sessionCount === 5 && !userProfile.achievements?.includes('five_sessions')) {
+    if (sessionCount === 5 && !existingAchievements.includes('five_sessions')) {
       newAchievements.push('five_sessions');
     }
-    if (sessionCount === 10 && !userProfile.achievements?.includes('ten_sessions')) {
+    if (sessionCount === 10 && !existingAchievements.includes('ten_sessions')) {
       newAchievements.push('ten_sessions');
     }
     
     if (newAchievements.length > 0) {
       await updateDoc(doc(db, 'users', user.uid), {
-        achievements: [...(userProfile.achievements || []), ...newAchievements]
+        achievements: [...existingAchievements, ...newAchievements]
       });
       setUserProfile({
         ...userProfile,
-        achievements: [...(userProfile.achievements || []), ...newAchievements]
+        achievements: [...existingAchievements, ...newAchievements]
       });
     }
   };
