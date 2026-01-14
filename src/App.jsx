@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
 import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home } from 'lucide-react';
 
 const firebaseConfig = {
@@ -17,6 +18,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app);
 
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
@@ -359,13 +361,8 @@ export default function SkillSwap() {
     if (!window.confirm('Delete this user?')) return;
     
     try {
-      await deleteDoc(doc(db, 'users', userId));
-      await addDoc(collection(db, 'auditLogs'), {
-        action: 'USER_DELETED',
-        userId: user.uid,
-        targetUserId: userId,
-        timestamp: Timestamp.now()
-      });
+      const deleteUserCascade = httpsCallable(functions, 'deleteUserCascade');
+      await deleteUserCascade({ userId });
       loadUserData();
     } catch (error) {
       alert(error.message);
