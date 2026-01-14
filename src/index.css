@@ -1,5 +1,24 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
+body {
+  background: #f5f7f4;
+  color: #1f2a2a;
+}
+
+:root {
+  --soothing-ink: #1f2a2a;
+  --soothing-muted: #5f6e6d;
+  --soothing-soft: #eef3f2;
+  --soothing-surface: #ffffff;
+  --soothing-border: #d8e3e0;
+  --soothing-primary: #6ab4ad;
+  --soothing-secondary: #8fa2d9;
+  --soothing-accent: #f2c4a2;
+  --soothing-success: #8cc7a3;
+  --soothing-warning: #f3d69b;
+  --soothing-danger: #e7a5a5;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -14,4 +33,201 @@ body {
 
 #root {
   min-height: 100vh;
+}
+
+/* Soothing palette overrides for Tailwind utility classes */
+.bg-gradient-to-br {
+  background-image: linear-gradient(135deg, #f1f5f3, #e7f0f6, #f7f6f1);
+}
+
+.bg-gradient-to-r {
+  background-image: linear-gradient(90deg, #7fbdb6, #a3b2df);
+}
+
+.from-orange-500,
+.from-orange-600,
+.to-blue-500,
+.to-blue-600,
+.from-yellow-500,
+.to-orange-500 {
+  --tw-gradient-from: #7fbdb6;
+  --tw-gradient-to: #a3b2df;
+}
+
+.bg-gray-900 {
+  background-color: #f5f7f4;
+}
+
+.bg-gray-800 {
+  background-color: var(--soothing-surface);
+}
+
+.bg-gray-700 {
+  background-color: var(--soothing-soft);
+}
+
+.bg-gray-600 {
+  background-color: #dfe7e5;
+}
+
+.bg-gray-900,
+.bg-gray-800,
+.bg-gray-700,
+.bg-gray-600 {
+  color: var(--soothing-ink);
+}
+
+.text-white {
+  color: var(--soothing-ink);
+}
+
+.text-gray-300 {
+  color: #6a7a79;
+}
+
+.text-gray-400 {
+  color: #738382;
+}
+
+.text-gray-500 {
+  color: #849392;
+}
+
+.text-gray-600 {
+  color: #97a4a3;
+}
+
+.border-gray-600,
+.border-gray-700 {
+  border-color: var(--soothing-border);
+}
+
+.border-orange-500 {
+  border-color: var(--soothing-accent);
+}
+
+.border-blue-500 {
+  border-color: var(--soothing-secondary);
+}
+
+.border-green-500 {
+  border-color: var(--soothing-success);
+}
+
+.border-yellow-500 {
+  border-color: var(--soothing-warning);
+}
+
+.text-orange-400 {
+  color: var(--soothing-accent);
+}
+
+.text-blue-400 {
+  color: var(--soothing-secondary);
+}
+
+.text-green-400 {
+  color: var(--soothing-success);
+}
+
+.text-yellow-400 {
+  color: var(--soothing-warning);
+}
+
+.text-red-400 {
+  color: var(--soothing-danger);
+}
+
+.bg-orange-500 {
+  background-color: var(--soothing-accent);
+}
+
+.bg-blue-500 {
+  background-color: var(--soothing-secondary);
+}
+
+.bg-green-500 {
+  background-color: var(--soothing-success);
+}
+
+.bg-yellow-500 {
+  background-color: var(--soothing-warning);
+}
+
+.bg-red-500 {
+  background-color: var(--soothing-danger);
+}
+
+.bg-blue-600 {
+  background-color: #7c91cf;
+}
+
+.bg-orange-600 {
+  background-color: #eab894;
+}
+
+.bg-green-600 {
+  background-color: #7dbf97;
+}
+
+.bg-yellow-600 {
+  background-color: #eccf8c;
+}
+
+.bg-red-600 {
+  background-color: #de9797;
+}
+
+.hover\:bg-blue-600:hover {
+  background-color: #7c91cf;
+}
+
+.hover\:bg-orange-600:hover {
+  background-color: #eab894;
+}
+
+.hover\:bg-green-600:hover {
+  background-color: #7dbf97;
+}
+
+.hover\:bg-yellow-600:hover {
+  background-color: #eccf8c;
+}
+
+.hover\:bg-red-600:hover {
+  background-color: #de9797;
+}
+
+.hover\:bg-gray-700:hover {
+  background-color: #e2e9e7;
+}
+
+.hover\:text-blue-300:hover {
+  color: #8aa0d6;
+}
+
+.hover\:text-blue-400:hover {
+  color: #8fa2d9;
+}
+
+.hover\:text-red-300:hover {
+  color: #dda1a1;
+}
+
+.shadow-2xl,
+.shadow-lg {
+  box-shadow: 0 20px 40px rgba(31, 42, 42, 0.08);
+}
+
+.rounded-lg,
+.rounded-2xl {
+  border-radius: 20px;
+}
+
+.focus\:border-blue-500:focus,
+.focus\:border-orange-500:focus,
+.focus\:border-yellow-500:focus {
+  border-color: var(--soothing-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(106, 180, 173, 0.2);
 }
