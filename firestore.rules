@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc(userId) {
+      return get(/databases/$(database)/documents/users/$(userId));
+    }
+
+    function isAdmin() {
+      return isSignedIn() && userDoc(request.auth.uid).data.role == 'admin';
+    }
+
+    function canReadProfile(userId) {
+      return isAdmin()
+        || (isSignedIn() && request.auth.uid == userId)
+        || userDoc(userId).data.isPrivate != true
+        || (isSignedIn() && request.auth.uid in userDoc(userId).data.allowedViewers);
+    }
+
+    function allowsSessionRequests(userId) {
+      return userDoc(userId).data.allowSessionRequests != false;
+    }
+
+    function allowsMessages(userId) {
+      return userDoc(userId).data.allowMessages != false;
+    }
+
+    function sessionDoc(sessionId) {
+      return get(/databases/$(database)/documents/sessions/$(sessionId));
+    }
+
+    function isSessionParticipant(session, userId) {
+      return session.data.participants.hasAny([userId]);
+    }
+
+    function recipientAllowsMessages(session, senderId) {
+      return session.data.participants.size() == 2
+        && (
+          (session.data.participants[0] == senderId
+            && allowsMessages(session.data.participants[1]))
+          || (session.data.participants[1] == senderId
+            && allowsMessages(session.data.participants[0]))
+        );
+    }
+
+    function canReadClub(club) {
+      return club.data.visibility == 'public'
+        || (isSignedIn()
+          && (club.data.ownerId == request.auth.uid
+            || club.data.members.hasAny([request.auth.uid])));
+    }
+
+    match /users/{userId} {
+      allow read: if canReadProfile(userId);
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && request.auth.uid in resource.data.participants);
+      allow create: if isSignedIn()
+        && request.auth.uid == request.resource.data.requesterId
+        && allowsSessionRequests(request.resource.data.providerId);
+      allow update: if isAdmin()
+        || (isSignedIn() && request.auth.uid in resource.data.participants);
+      allow delete: if false;
+    }
+
+    match /messages/{messageId} {
+      allow read: if isSignedIn()
+        && isSessionParticipant(sessionDoc(resource.data.sessionId), request.auth.uid);
+      allow create: if isSignedIn()
+        && request.auth.uid == request.resource.data.fromUserId
+        && isSessionParticipant(sessionDoc(request.resource.data.sessionId), request.auth.uid)
+        && recipientAllowsMessages(sessionDoc(request.resource.data.sessionId), request.auth.uid);
+      allow update, delete: if false;
+    }
+
+    match /ratings/{ratingId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.raterId;
+      allow update, delete: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.userId;
+      allow update, delete: if false;
+    }
+
+    match /clubs/{clubId} {
+      allow read: if canReadClub(resource);
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.ownerId;
+      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
+    }
+  }
+}
