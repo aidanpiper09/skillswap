@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
 import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home } from 'lucide-react';
 
@@ -17,6 +18,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app);
 
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
@@ -127,6 +129,16 @@ export default function SkillSwap() {
     }
   };
 
+  const logAuditEvent = async (action, payload = {}) => {
+    if (!auth.currentUser) return;
+    try {
+      const logEvent = httpsCallable(functions, 'logAuditEvent');
+      await logEvent({ action, ...payload });
+    } catch (error) {
+      console.error('Failed to log audit event', error);
+    }
+  };
+
   const calculateStats = (users, sessions) => {
     const skillCounts = {};
     const ratingsBySkill = {};
@@ -161,11 +173,7 @@ export default function SkillSwap() {
           achievements: [],
           sessionsCompleted: 0
         });
-        await addDoc(collection(db, 'auditLogs'), {
-          action: 'USER_REGISTERED',
-          userId: userCred.user.uid,
-          timestamp: Timestamp.now()
-        });
+        await logAuditEvent('USER_REGISTERED', { targetUserId: userCred.user.uid });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
@@ -223,11 +231,9 @@ export default function SkillSwap() {
         createdAt: Timestamp.now()
       });
       
-      await addDoc(collection(db, 'auditLogs'), {
-        action: 'SESSION_REQUESTED',
-        userId: user.uid,
+      await logAuditEvent('SESSION_REQUESTED', {
         sessionId: sessionDoc.id,
-        timestamp: Timestamp.now()
+        targetUserId: selectedUser.id
       });
       
       alert('Session requested!');
@@ -256,11 +262,8 @@ export default function SkillSwap() {
         checkAchievements(newCount);
       }
       
-      await addDoc(collection(db, 'auditLogs'), {
-        action: `SESSION_${status.toUpperCase()}`,
-        userId: user.uid,
-        sessionId,
-        timestamp: Timestamp.now()
+      await logAuditEvent(`SESSION_${status.toUpperCase()}`, {
+        sessionId
       });
       
       loadUserData();
@@ -360,12 +363,7 @@ export default function SkillSwap() {
     
     try {
       await deleteDoc(doc(db, 'users', userId));
-      await addDoc(collection(db, 'auditLogs'), {
-        action: 'USER_DELETED',
-        userId: user.uid,
-        targetUserId: userId,
-        timestamp: Timestamp.now()
-      });
+      await logAuditEvent('USER_DELETED', { targetUserId: userId });
       loadUserData();
     } catch (error) {
       alert(error.message);
@@ -1137,7 +1135,7 @@ export default function SkillSwap() {
                   <div key={log.id} className="bg-gray-700 p-3 rounded-lg text-sm">
                     <p className="text-white font-semibold">{log.action}</p>
                     <p className="text-gray-400 text-xs">
-                      {log.timestamp?.toDate?.()?.toLocaleString()}
+                      {log.createdAt?.toDate?.()?.toLocaleString()}
                     </p>
                   </div>
                 ))}
