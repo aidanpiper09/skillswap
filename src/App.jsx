@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onIdTokenChanged, getIdTokenResult } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -21,6 +24,10 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const functions = getFunctions(app);
+const createSessionFn = httpsCallable(functions, 'createSession');
+const updateSessionStatusFn = httpsCallable(functions, 'updateSessionStatus');
+const deleteUserFn = httpsCallable(functions, 'deleteUserAccount');
+const createAuditLogFn = httpsCallable(functions, 'createAuditLog');
 
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
@@ -329,10 +336,8 @@ export default function SkillSwap() {
           achievements: [],
           sessionsCompleted: 0
         });
-        await addDoc(collection(db, 'auditLogs'), {
-          action: 'USER_REGISTERED',
-          userId: userCred.user.uid,
-          timestamp: Timestamp.now()
+        await createAuditLogFn({
+          action: 'USER_REGISTERED'
         });
         setAuthFeedback({ type: 'success', message: 'Account created! Let’s finish your profile.' });
       } else {
@@ -421,24 +426,11 @@ export default function SkillSwap() {
     }
     
     try {
-      const sessionDoc = await addDoc(collection(db, 'sessions'), {
-        requesterId: user.uid,
-        requesterName: userProfile.name,
+      await createSessionFn({
         providerId: selectedUser.id,
-        providerName: selectedUser.name,
         skill: sessionSkill,
-        startTime: new Date(`${sessionDate}T${sessionTime}`),
-        location: sessionLocation,
-        status: 'pending',
-        participants: [user.uid, selectedUser.id],
-        createdAt: Timestamp.now()
-      });
-      
-      await addDoc(collection(db, 'auditLogs'), {
-        action: 'SESSION_REQUESTED',
-        userId: user.uid,
-        sessionId: sessionDoc.id,
-        timestamp: Timestamp.now()
+        startTime: new Date(`${sessionDate}T${sessionTime}`).toISOString(),
+        location: sessionLocation
       });
       
       setSessionFeedback({ type: 'success', message: 'Session requested! You will be notified when it is accepted.' });
@@ -457,6 +449,14 @@ export default function SkillSwap() {
   const updateSessionStatus = async (sessionId, status) => {
     setSessionFeedback(null);
     try {
+      const response = await updateSessionStatusFn({ sessionId, status });
+      
+      if (status === 'completed' && response.data?.sessionsCompleted !== undefined) {
+        const newCount = response.data.sessionsCompleted;
+        setUserProfile({ ...userProfile, sessionsCompleted: newCount });
+        checkAchievements(newCount);
+      }
+      
       const updateStatus = httpsCallable(functions, 'updateSessionStatus');
       await updateStatus({ sessionId, status });
       
@@ -584,6 +584,7 @@ export default function SkillSwap() {
     if (!window.confirm('Delete this user?')) return;
     
     try {
+      await deleteUserFn({ targetUserId: userId });
       const deleteUserAndData = httpsCallable(functions, 'deleteUserAndData');
       await deleteUserAndData({ userId });
       const deleteUserCascade = httpsCallable(functions, 'deleteUserCascade');
