@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home } from 'lucide-react';
 
 const firebaseConfig = {
@@ -17,6 +18,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app);
 
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
@@ -70,7 +72,13 @@ export default function SkillSwap() {
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminSessions, setAdminSessions] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
-  const [stats, setStats] = useState({});
+  const [adminReports, setAdminReports] = useState({
+    userCounts: {},
+    sessionStats: {},
+    ratingsSummary: {},
+    moderationFlags: {},
+    topSkills: []
+  });
   
   // Search
   const [searchTerm, setSearchTerm] = useState('');
@@ -114,35 +122,29 @@ export default function SkillSwap() {
     }
     
     if (page === 'admin' && userProfile?.role === 'admin') {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      setAdminUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      
-      const sessionsSnap = await getDocs(collection(db, 'sessions'));
-      setAdminSessions(sessionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      
-      const logsSnap = await getDocs(query(collection(db, 'auditLogs'), orderBy('createdAt', 'desc')));
-      setAuditLogs(logsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      
-      calculateStats(usersSnap.docs, sessionsSnap.docs);
-    }
-  };
-
-  const calculateStats = (users, sessions) => {
-    const skillCounts = {};
-    const ratingsBySkill = {};
-    
-    sessions.forEach(s => {
-      const session = s.data();
-      if (session.skill) {
-        skillCounts[session.skill] = (skillCounts[session.skill] || 0) + 1;
+      try {
+        const getReports = httpsCallable(functions, 'getAdminReports');
+        const getDashboardData = httpsCallable(functions, 'getAdminDashboardData');
+        const [reportsRes, dashboardRes] = await Promise.all([
+          getReports(),
+          getDashboardData()
+        ]);
+        const reports = reportsRes.data || {};
+        const dashboard = dashboardRes.data || {};
+        setAdminReports({
+          userCounts: reports.userCounts || {},
+          sessionStats: reports.sessionStats || {},
+          ratingsSummary: reports.ratingsSummary || {},
+          moderationFlags: reports.moderationFlags || {},
+          topSkills: reports.topSkills || []
+        });
+        setAdminUsers(dashboard.users || []);
+        setAdminSessions(dashboard.sessions || []);
+        setAuditLogs(dashboard.auditLogs || []);
+      } catch (error) {
+        alert(error.message);
       }
-    });
-    
-    setStats({
-      totalUsers: users.length,
-      totalSessions: sessions.length,
-      topSkills: Object.entries(skillCounts).sort((a, b) => b[1] - a[1]).slice(0, 5)
-    });
+    }
   };
 
   const handleAuth = async (e) => {
@@ -359,13 +361,8 @@ export default function SkillSwap() {
     if (!window.confirm('Delete this user?')) return;
     
     try {
-      await deleteDoc(doc(db, 'users', userId));
-      await addDoc(collection(db, 'auditLogs'), {
-        action: 'USER_DELETED',
-        userId: user.uid,
-        targetUserId: userId,
-        timestamp: Timestamp.now()
-      });
+      const deleteUserCallable = httpsCallable(functions, 'adminDeleteUser');
+      await deleteUserCallable({ targetUserId: userId });
       loadUserData();
     } catch (error) {
       alert(error.message);
@@ -1086,34 +1083,66 @@ export default function SkillSwap() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-gray-800 p-6 rounded-lg border border-orange-500">
               <p className="text-gray-400 text-sm">Total Users</p>
-              <p className="text-3xl font-bold text-orange-400">{stats.totalUsers || 0}</p>
+              <p className="text-3xl font-bold text-orange-400">{adminReports.userCounts?.totalUsers || 0}</p>
             </div>
             <div className="bg-gray-800 p-6 rounded-lg border border-blue-500">
               <p className="text-gray-400 text-sm">Total Sessions</p>
-              <p className="text-3xl font-bold text-blue-400">{stats.totalSessions || 0}</p>
+              <p className="text-3xl font-bold text-blue-400">{adminReports.sessionStats?.totalSessions || 0}</p>
             </div>
             <div className="bg-gray-800 p-6 rounded-lg border border-green-500">
-              <p className="text-gray-400 text-sm">Active Sessions</p>
+              <p className="text-gray-400 text-sm">Avg. Rating</p>
               <p className="text-3xl font-bold text-green-400">
-                {adminSessions.filter(s => s.status === 'accepted').length}
+                {(adminReports.ratingsSummary?.averageScore || 0).toFixed(1)}
               </p>
             </div>
             <div className="bg-gray-800 p-6 rounded-lg border border-yellow-500">
-              <p className="text-gray-400 text-sm">Pending Requests</p>
+              <p className="text-gray-400 text-sm">Open Flags</p>
               <p className="text-3xl font-bold text-yellow-400">
-                {adminSessions.filter(s => s.status === 'pending').length}
+                {adminReports.moderationFlags?.openFlags || 0}
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div className="bg-gray-800 p-6 rounded-lg border border-green-500">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+                <BarChart3 className="mr-2 text-green-400" />
+                Session Breakdown
+              </h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
+                  <span className="text-white">Accepted</span>
+                  <span className="px-3 py-1 bg-green-500 text-white rounded-full text-sm">
+                    {adminReports.sessionStats?.accepted || 0}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
+                  <span className="text-white">Pending</span>
+                  <span className="px-3 py-1 bg-yellow-500 text-white rounded-full text-sm">
+                    {adminReports.sessionStats?.pending || 0}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
+                  <span className="text-white">Completed</span>
+                  <span className="px-3 py-1 bg-blue-500 text-white rounded-full text-sm">
+                    {adminReports.sessionStats?.completed || 0}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
+                  <span className="text-white">Declined</span>
+                  <span className="px-3 py-1 bg-gray-500 text-white rounded-full text-sm">
+                    {adminReports.sessionStats?.declined || 0}
+                  </span>
+                </div>
+              </div>
+            </div>
             <div className="bg-gray-800 p-6 rounded-lg border border-orange-500">
               <h3 className="text-xl font-bold text-white mb-4 flex items-center">
                 <TrendingUp className="mr-2 text-orange-400" />
                 Top Skills Requested
               </h3>
               <div className="space-y-3">
-                {stats.topSkills?.map(([skill, count], idx) => (
+                {adminReports.topSkills?.map(([skill, count], idx) => (
                   <div key={idx} className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
                     <span className="text-white font-semibold">{skill}</span>
                     <span className="px-3 py-1 bg-orange-500 text-white rounded-full text-sm">
@@ -1121,7 +1150,7 @@ export default function SkillSwap() {
                     </span>
                   </div>
                 ))}
-                {(!stats.topSkills || stats.topSkills.length === 0) && (
+                {(!adminReports.topSkills || adminReports.topSkills.length === 0) && (
                   <p className="text-gray-500 text-center py-4">No data yet</p>
                 )}
               </div>
@@ -1137,10 +1166,67 @@ export default function SkillSwap() {
                   <div key={log.id} className="bg-gray-700 p-3 rounded-lg text-sm">
                     <p className="text-white font-semibold">{log.action}</p>
                     <p className="text-gray-400 text-xs">
-                      {log.timestamp?.toDate?.()?.toLocaleString()}
+                      {log.createdAt?.toDate?.()?.toLocaleString() || log.timestamp?.toDate?.()?.toLocaleString() || log.createdAt}
                     </p>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div className="bg-gray-800 p-6 rounded-lg border border-yellow-500">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+                <Star className="mr-2 text-yellow-400" />
+                Ratings Summary
+              </h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
+                  <span className="text-white">Total Ratings</span>
+                  <span className="px-3 py-1 bg-yellow-500 text-white rounded-full text-sm">
+                    {adminReports.ratingsSummary?.totalRatings || 0}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
+                  <span className="text-white">5-Star Rate</span>
+                  <span className="px-3 py-1 bg-orange-500 text-white rounded-full text-sm">
+                    {adminReports.ratingsSummary?.fiveStarRate || 0}%
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {[1, 2, 3, 4, 5].map(score => (
+                    <div key={score} className="bg-gray-700 p-3 rounded-lg text-center">
+                      <p className="text-xs text-gray-400">{score}★</p>
+                      <p className="text-white font-semibold">{adminReports.ratingsSummary?.distribution?.[score] || 0}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="bg-gray-800 p-6 rounded-lg border border-red-500">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+                <Shield className="mr-2 text-red-400" />
+                Moderation Flags
+              </h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
+                  <span className="text-white">Total Flags</span>
+                  <span className="px-3 py-1 bg-red-500 text-white rounded-full text-sm">
+                    {adminReports.moderationFlags?.totalFlags || 0}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
+                  <span className="text-white">Open</span>
+                  <span className="px-3 py-1 bg-yellow-500 text-white rounded-full text-sm">
+                    {adminReports.moderationFlags?.openFlags || 0}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
+                  <span className="text-white">Resolved</span>
+                  <span className="px-3 py-1 bg-green-500 text-white rounded-full text-sm">
+                    {adminReports.moderationFlags?.resolvedFlags || 0}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
