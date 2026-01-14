@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
 import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home } from 'lucide-react';
@@ -34,6 +36,7 @@ export default function SkillSwap() {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState('login');
+  const [profileInitialized, setProfileInitialized] = useState(false);
   
   // Auth states
   const [email, setEmail] = useState('');
@@ -42,6 +45,8 @@ export default function SkillSwap() {
   const [role, setRole] = useState('student');
   const [gradYear, setGradYear] = useState('2026');
   const [isRegister, setIsRegister] = useState(false);
+  const [authErrors, setAuthErrors] = useState({});
+  const [authFeedback, setAuthFeedback] = useState(null);
   
   // Profile states
   const [bio, setBio] = useState('');
@@ -49,6 +54,10 @@ export default function SkillSwap() {
   const [soughtSkills, setSoughtSkills] = useState([]);
   const [newSkill, setNewSkill] = useState('');
   const [skillType, setSkillType] = useState('offered');
+  const [clubs, setClubs] = useState([]);
+  const [newClub, setNewClub] = useState('');
+  const [profileErrors, setProfileErrors] = useState({});
+  const [profileFeedback, setProfileFeedback] = useState(null);
   
   // Sessions states
   const [sessions, setSessions] = useState([]);
@@ -58,15 +67,21 @@ export default function SkillSwap() {
   const [sessionDate, setSessionDate] = useState('');
   const [sessionTime, setSessionTime] = useState('');
   const [sessionLocation, setSessionLocation] = useState('');
+  const [sessionErrors, setSessionErrors] = useState({});
+  const [sessionFeedback, setSessionFeedback] = useState(null);
   
   // Messages states
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [selectedSession, setSelectedSession] = useState(null);
+  const [messageErrors, setMessageErrors] = useState({});
+  const [messageFeedback, setMessageFeedback] = useState(null);
   
   // Rating states
   const [ratingScore, setRatingScore] = useState(5);
   const [ratingComment, setRatingComment] = useState('');
+  const [ratingErrors, setRatingErrors] = useState({});
+  const [ratingFeedback, setRatingFeedback] = useState(null);
   
   // Admin states
   const [adminUsers, setAdminUsers] = useState([]);
@@ -91,6 +106,7 @@ export default function SkillSwap() {
       } else {
         setPage('login');
       }
+      setProfileInitialized(false);
       setLoading(false);
     });
     return unsubscribe;
@@ -102,6 +118,145 @@ export default function SkillSwap() {
     }
   }, [user, userProfile, page]);
 
+  useEffect(() => {
+    if (userProfile && !profileInitialized) {
+      setBio(userProfile.bio || '');
+      setOfferedSkills(userProfile.offeredSkills || []);
+      setSoughtSkills(userProfile.soughtSkills || []);
+      setClubs(userProfile.clubs || []);
+      setProfileInitialized(true);
+    }
+  }, [userProfile, profileInitialized]);
+
+  const FeedbackBanner = ({ feedback }) => {
+    if (!feedback) return null;
+    const styles = feedback.type === 'error'
+      ? 'border-red-500 bg-red-500/10 text-red-200'
+      : 'border-green-500 bg-green-500/10 text-green-200';
+    const Icon = feedback.type === 'error' ? XCircle : CheckCircle;
+    return (
+      <div className={`flex items-start space-x-2 border px-4 py-3 rounded-lg ${styles}`}>
+        <Icon size={20} className={feedback.type === 'error' ? 'text-red-400' : 'text-green-400'} />
+        <p className="text-sm">{feedback.message}</p>
+      </div>
+    );
+  };
+
+  const FieldError = ({ message }) => (
+    message ? <p className="text-red-400 text-sm mt-1">{message}</p> : null
+  );
+
+  const validateAuthForm = () => {
+    const errors = {};
+    if (!email.trim()) {
+      errors.email = 'Enter your email address.';
+    } else if (!email.includes('@')) {
+      errors.email = 'Use a valid email format (name@school.edu).';
+    }
+    if (!password) {
+      errors.password = 'Enter your password.';
+    } else if (password.length < 8) {
+      errors.password = 'Password must be at least 8 characters long.';
+    }
+    if (isRegister) {
+      if (!name.trim()) {
+        errors.name = 'Tell us your full name.';
+      }
+      const year = Number(gradYear);
+      if (!gradYear) {
+        errors.gradYear = 'Enter your graduation year.';
+      } else if (Number.isNaN(year) || year < 2024 || year > 2035) {
+        errors.gradYear = 'Graduation year should be between 2024 and 2035.';
+      }
+    }
+    setAuthErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateProfileForm = () => {
+    const errors = {};
+    if (!bio.trim()) {
+      errors.bio = 'Add a short bio so others know you.';
+    } else if (bio.trim().length < 10) {
+      errors.bio = 'Bio should be at least 10 characters.';
+    }
+    if ((offeredSkills.length === 0) && (soughtSkills.length === 0)) {
+      errors.skills = 'Add at least one skill you offer or want to learn.';
+    }
+    if (clubs.length === 0) {
+      errors.clubs = 'Add at least one club or activity you are part of.';
+    }
+    setProfileErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateSessionForm = () => {
+    const errors = {};
+    if (!selectedUser) {
+      errors.selectedUser = 'Choose a student to request a session with.';
+    }
+    if (!sessionSkill) {
+      errors.sessionSkill = 'Select a skill for this session.';
+    }
+    if (!sessionDate) {
+      errors.sessionDate = 'Pick a date for the session.';
+    }
+    if (!sessionTime) {
+      errors.sessionTime = 'Pick a time for the session.';
+    }
+    if (!sessionLocation.trim()) {
+      errors.sessionLocation = 'Add a location or online link.';
+    }
+    if (sessionDate && sessionTime) {
+      const startTime = new Date(`${sessionDate}T${sessionTime}`);
+      if (Number.isNaN(startTime.getTime())) {
+        errors.sessionDate = 'Enter a valid date and time.';
+      } else if (startTime < new Date()) {
+        errors.sessionDate = 'Choose a future time for the session.';
+      }
+    }
+    setSessionErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateRatingForm = () => {
+    const errors = {};
+    if (!ratingScore || ratingScore < 1) {
+      errors.ratingScore = 'Select a rating between 1 and 5 stars.';
+    }
+    if (ratingComment && ratingComment.length > 300) {
+      errors.ratingComment = 'Keep comments under 300 characters.';
+    }
+    setRatingErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateMessageForm = () => {
+    const errors = {};
+    if (!selectedSession) {
+      errors.selectedSession = 'Pick a session to message.';
+    }
+    if (!newMessage.trim()) {
+      errors.newMessage = 'Write a message before sending.';
+    } else if (newMessage.trim().length < 2) {
+      errors.newMessage = 'Message is too short.';
+    }
+    setMessageErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const authErrorMessage = (error) => {
+    if (error?.code === 'auth/invalid-credential') {
+      return 'We could not sign you in with those details. Double-check your email and password.';
+    }
+    if (error?.code === 'auth/email-already-in-use') {
+      return 'That email is already in use. Try logging in instead.';
+    }
+    if (error?.code === 'auth/weak-password') {
+      return 'Choose a stronger password (at least 8 characters).';
+    }
+    return error?.message || 'Something went wrong. Please try again.';
+  };
   const loadUserData = async () => {
     if (page === 'dashboard' || page === 'sessions') {
       const sessionsQuery = query(
@@ -149,6 +304,11 @@ export default function SkillSwap() {
 
   const handleAuth = async (e) => {
     e.preventDefault();
+    setAuthFeedback(null);
+    if (!validateAuthForm()) {
+      setAuthFeedback({ type: 'error', message: 'Please fix the highlighted fields.' });
+      return;
+    }
     try {
       if (isRegister) {
         const userCred = await createUserWithEmailAndPassword(auth, email, password);
@@ -160,6 +320,7 @@ export default function SkillSwap() {
           createdAt: Timestamp.now(),
           offeredSkills: [],
           soughtSkills: [],
+          clubs: [],
           achievements: [],
           sessionsCompleted: 0
         });
@@ -168,11 +329,13 @@ export default function SkillSwap() {
           userId: userCred.user.uid,
           timestamp: Timestamp.now()
         });
+        setAuthFeedback({ type: 'success', message: 'Account created! Let’s finish your profile.' });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
+        setAuthFeedback({ type: 'success', message: 'Welcome back! Redirecting you now.' });
       }
     } catch (error) {
-      alert(error.message);
+      setAuthFeedback({ type: 'error', message: authErrorMessage(error) });
     }
   };
 
@@ -182,32 +345,72 @@ export default function SkillSwap() {
   };
 
   const updateProfile = async () => {
+    setProfileFeedback(null);
+    if (!validateProfileForm()) {
+      setProfileFeedback({ type: 'error', message: 'Please update the highlighted fields.' });
+      return;
+    }
     try {
       await updateDoc(doc(db, 'users', user.uid), {
         bio,
         offeredSkills,
-        soughtSkills
+        soughtSkills,
+        clubs
       });
-      setUserProfile({ ...userProfile, bio, offeredSkills, soughtSkills });
-      alert('Profile updated!');
+      setUserProfile({ ...userProfile, bio, offeredSkills, soughtSkills, clubs });
+      setProfileErrors({});
+      setProfileFeedback({ type: 'success', message: 'Profile updated successfully.' });
     } catch (error) {
-      alert(error.message);
+      setProfileFeedback({ type: 'error', message: error.message });
     }
   };
 
   const addSkill = () => {
-    if (!newSkill.trim()) return;
+    if (!newSkill.trim()) {
+      setProfileFeedback({ type: 'error', message: 'Add a skill name before saving.' });
+      return;
+    }
+    const normalizedSkill = newSkill.trim().toLowerCase();
     if (skillType === 'offered') {
-      setOfferedSkills([...offeredSkills, { name: newSkill, proficiency: 'intermediate' }]);
+      if (offeredSkills.some(skill => skill.name.toLowerCase() === normalizedSkill)) {
+        setProfileFeedback({ type: 'error', message: 'That offered skill is already listed.' });
+        return;
+      }
+      setOfferedSkills([...offeredSkills, { name: newSkill.trim(), proficiency: 'intermediate' }]);
+      setProfileErrors((prev) => ({ ...prev, skills: null }));
+      setProfileFeedback({ type: 'success', message: 'Offered skill added.' });
     } else {
-      setSoughtSkills([...soughtSkills, { name: newSkill, interest: 'high' }]);
+      if (soughtSkills.some(skill => skill.name.toLowerCase() === normalizedSkill)) {
+        setProfileFeedback({ type: 'error', message: 'That learning goal is already listed.' });
+        return;
+      }
+      setSoughtSkills([...soughtSkills, { name: newSkill.trim(), interest: 'high' }]);
+      setProfileErrors((prev) => ({ ...prev, skills: null }));
+      setProfileFeedback({ type: 'success', message: 'Learning goal added.' });
     }
     setNewSkill('');
   };
 
+  const addClub = () => {
+    if (!newClub.trim()) {
+      setProfileFeedback({ type: 'error', message: 'Enter a club or activity name.' });
+      return;
+    }
+    const normalizedClub = newClub.trim().toLowerCase();
+    if (clubs.some(club => club.toLowerCase() === normalizedClub)) {
+      setProfileFeedback({ type: 'error', message: 'That club is already listed.' });
+      return;
+    }
+    setClubs([...clubs, newClub.trim()]);
+    setNewClub('');
+    setProfileErrors((prev) => ({ ...prev, clubs: null }));
+    setProfileFeedback({ type: 'success', message: 'Club added.' });
+  };
+
   const requestSession = async () => {
-    if (!selectedUser || !sessionSkill || !sessionDate || !sessionTime) {
-      alert('Please fill all fields');
+    setSessionFeedback(null);
+    if (!validateSessionForm()) {
+      setSessionFeedback({ type: 'error', message: 'Please complete the required fields.' });
       return;
     }
     
@@ -232,30 +435,30 @@ export default function SkillSwap() {
         timestamp: Timestamp.now()
       });
       
-      alert('Session requested!');
+      setSessionFeedback({ type: 'success', message: 'Session requested! You will be notified when it is accepted.' });
       setSelectedUser(null);
       setSessionSkill('');
       setSessionDate('');
       setSessionTime('');
       setSessionLocation('');
+      setSessionErrors({});
       loadUserData();
     } catch (error) {
-      alert(error.message);
+      setSessionFeedback({ type: 'error', message: error.message });
     }
   };
 
   const updateSessionStatus = async (sessionId, status) => {
+    setSessionFeedback(null);
     try {
-      await updateDoc(doc(db, 'sessions', sessionId), { status });
+      const updateStatus = httpsCallable(functions, 'updateSessionStatus');
+      await updateStatus({ sessionId, status });
       
       if (status === 'completed') {
-        const session = sessions.find(s => s.id === sessionId);
-        const newCount = (userProfile.sessionsCompleted || 0) + 1;
-        await updateDoc(doc(db, 'users', user.uid), {
-          sessionsCompleted: newCount
-        });
-        
-        checkAchievements(newCount);
+        const userSnapshot = await getDoc(doc(db, 'users', user.uid));
+        const updatedCount = userSnapshot.data()?.sessionsCompleted || 0;
+        const updatedAchievements = userSnapshot.data()?.achievements || [];
+        await checkAchievements(updatedCount, updatedAchievements);
       }
       
       await addDoc(collection(db, 'auditLogs'), {
@@ -265,37 +468,44 @@ export default function SkillSwap() {
         timestamp: Timestamp.now()
       });
       
+      setSessionFeedback({ type: 'success', message: `Session marked as ${status}.` });
+      setSessionErrors({});
       loadUserData();
     } catch (error) {
-      alert(error.message);
+      setSessionFeedback({ type: 'error', message: error.message });
     }
   };
 
-  const checkAchievements = async (sessionCount) => {
+  const checkAchievements = async (sessionCount, existingAchievements = userProfile.achievements || []) => {
     const newAchievements = [];
     
-    if (sessionCount === 1 && !userProfile.achievements?.includes('first_session')) {
+    if (sessionCount === 1 && !existingAchievements.includes('first_session')) {
       newAchievements.push('first_session');
     }
-    if (sessionCount === 5 && !userProfile.achievements?.includes('five_sessions')) {
+    if (sessionCount === 5 && !existingAchievements.includes('five_sessions')) {
       newAchievements.push('five_sessions');
     }
-    if (sessionCount === 10 && !userProfile.achievements?.includes('ten_sessions')) {
+    if (sessionCount === 10 && !existingAchievements.includes('ten_sessions')) {
       newAchievements.push('ten_sessions');
     }
     
     if (newAchievements.length > 0) {
       await updateDoc(doc(db, 'users', user.uid), {
-        achievements: [...(userProfile.achievements || []), ...newAchievements]
+        achievements: [...existingAchievements, ...newAchievements]
       });
       setUserProfile({
         ...userProfile,
-        achievements: [...(userProfile.achievements || []), ...newAchievements]
+        achievements: [...existingAchievements, ...newAchievements]
       });
     }
   };
 
   const submitRating = async (sessionId) => {
+    setRatingFeedback(null);
+    if (!validateRatingForm()) {
+      setRatingFeedback({ type: 'error', message: 'Please fix the rating details.' });
+      return;
+    }
     try {
       const session = sessions.find(s => s.id === sessionId);
       const rateeId = session.requesterId === user.uid ? session.providerId : session.requesterId;
@@ -318,18 +528,23 @@ export default function SkillSwap() {
         }
       }
       
-      alert('Rating submitted!');
+      setRatingFeedback({ type: 'success', message: 'Rating submitted. Thank you for the feedback!' });
       setRatingScore(5);
       setRatingComment('');
       setSelectedSession(null);
+      setRatingErrors({});
       loadUserData();
     } catch (error) {
-      alert(error.message);
+      setRatingFeedback({ type: 'error', message: error.message });
     }
   };
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedSession) return;
+    setMessageFeedback(null);
+    if (!validateMessageForm()) {
+      setMessageFeedback({ type: 'error', message: 'Write a message before sending.' });
+      return;
+    }
     
     try {
       await addDoc(collection(db, 'messages'), {
@@ -341,9 +556,11 @@ export default function SkillSwap() {
       });
       
       setNewMessage('');
+      setMessageErrors({});
+      setMessageFeedback({ type: 'success', message: 'Message sent.' });
       loadMessages(selectedSession.id);
     } catch (error) {
-      alert(error.message);
+      setMessageFeedback({ type: 'error', message: error.message });
     }
   };
 
@@ -363,6 +580,8 @@ export default function SkillSwap() {
     try {
       const deleteUserAndData = httpsCallable(functions, 'deleteUserAndData');
       await deleteUserAndData({ userId });
+      const deleteUserCascade = httpsCallable(functions, 'deleteUserCascade');
+      await deleteUserCascade({ userId });
       loadUserData();
     } catch (error) {
       alert(error.message);
@@ -385,6 +604,9 @@ export default function SkillSwap() {
             SkillSwap
           </h1>
           <p className="text-gray-400 text-center mb-8">Student Talent Exchange Platform</p>
+          <div className="mb-4">
+            <FeedbackBanner feedback={authFeedback} />
+          </div>
           
           <form onSubmit={handleAuth} className="space-y-4">
             {isRegister && (
@@ -397,6 +619,7 @@ export default function SkillSwap() {
                   className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
                   required
                 />
+                <FieldError message={authErrors.name} />
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
@@ -412,6 +635,7 @@ export default function SkillSwap() {
                   onChange={(e) => setGradYear(e.target.value)}
                   className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
                 />
+                <FieldError message={authErrors.gradYear} />
               </>
             )}
             <input
@@ -422,6 +646,7 @@ export default function SkillSwap() {
               className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
               required
             />
+            <FieldError message={authErrors.email} />
             <input
               type="password"
               placeholder="Password"
@@ -430,6 +655,7 @@ export default function SkillSwap() {
               className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
               required
             />
+            <FieldError message={authErrors.password} />
             <button
               type="submit"
               className="w-full py-3 bg-gradient-to-r from-orange-500 to-blue-500 text-white font-bold rounded-lg hover:from-orange-600 hover:to-blue-600 transition"
@@ -439,7 +665,11 @@ export default function SkillSwap() {
           </form>
           
           <button
-            onClick={() => setIsRegister(!isRegister)}
+            onClick={() => {
+              setIsRegister(!isRegister);
+              setAuthErrors({});
+              setAuthFeedback(null);
+            }}
             className="w-full mt-4 text-blue-400 hover:text-blue-300 transition"
           >
             {isRegister ? 'Already have an account? Login' : "Don't have an account? Register"}
@@ -634,6 +864,9 @@ export default function SkillSwap() {
           
           <div className="bg-gray-800 p-8 rounded-lg border border-orange-500">
             <h2 className="text-2xl font-bold text-white mb-6">Request Session with {selectedUser.name}</h2>
+            <div className="mb-6">
+              <FeedbackBanner feedback={sessionFeedback} />
+            </div>
             
             <div className="space-y-4">
               <div>
@@ -648,6 +881,7 @@ export default function SkillSwap() {
                     <option key={idx} value={skill.name}>{skill.name}</option>
                   ))}
                 </select>
+                <FieldError message={sessionErrors.sessionSkill} />
               </div>
               
               <div>
@@ -658,6 +892,7 @@ export default function SkillSwap() {
                   onChange={(e) => setSessionDate(e.target.value)}
                   className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
                 />
+                <FieldError message={sessionErrors.sessionDate} />
               </div>
               
               <div>
@@ -668,6 +903,7 @@ export default function SkillSwap() {
                   onChange={(e) => setSessionTime(e.target.value)}
                   className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
                 />
+                <FieldError message={sessionErrors.sessionTime} />
               </div>
               
               <div>
@@ -679,6 +915,7 @@ export default function SkillSwap() {
                   placeholder="Library, Room 201, or Zoom link..."
                   className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
                 />
+                <FieldError message={sessionErrors.sessionLocation} />
               </div>
               
               <button
@@ -705,6 +942,9 @@ export default function SkillSwap() {
         
         <div className="max-w-7xl mx-auto p-6">
           <h2 className="text-3xl font-bold text-white mb-6">My Sessions</h2>
+          <div className="mb-6">
+            <FeedbackBanner feedback={sessionFeedback} />
+          </div>
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-gray-800 p-6 rounded-lg border border-orange-500">
@@ -848,6 +1088,10 @@ export default function SkillSwap() {
               <MessageCircle className="mr-2 text-blue-400" />
               Chat: {selectedSession.skill} Session
             </h2>
+            <div className="mb-4">
+              <FeedbackBanner feedback={messageFeedback} />
+              <FieldError message={messageErrors.selectedSession} />
+            </div>
             
             <div className="bg-gray-900 rounded-lg p-4 h-96 overflow-y-auto mb-4">
               {messages.map(msg => (
@@ -879,6 +1123,7 @@ export default function SkillSwap() {
                 Send
               </button>
             </div>
+            <FieldError message={messageErrors.newMessage} />
           </div>
         </div>
       </div>
@@ -903,6 +1148,9 @@ export default function SkillSwap() {
           
           <div className="bg-gray-800 p-8 rounded-lg border border-yellow-500">
             <h2 className="text-2xl font-bold text-white mb-6">Rate Your Session</h2>
+            <div className="mb-4">
+              <FeedbackBanner feedback={ratingFeedback} />
+            </div>
             
             <div className="mb-6">
               <p className="text-gray-400 mb-2">Session: {selectedSession.skill}</p>
@@ -924,6 +1172,7 @@ export default function SkillSwap() {
                   </button>
                 ))}
               </div>
+              <FieldError message={ratingErrors.ratingScore} />
             </div>
             
             <div className="mb-6">
@@ -934,6 +1183,7 @@ export default function SkillSwap() {
                 placeholder="Share your experience..."
                 className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-yellow-500 focus:outline-none h-32"
               />
+              <FieldError message={ratingErrors.ratingComment} />
             </div>
             
             <button
@@ -956,6 +1206,9 @@ export default function SkillSwap() {
         <div className="max-w-4xl mx-auto p-6">
           <div className="bg-gray-800 p-8 rounded-lg border border-orange-500 mb-6">
             <h2 className="text-2xl font-bold text-white mb-6">My Profile</h2>
+            <div className="mb-4">
+              <FeedbackBanner feedback={profileFeedback} />
+            </div>
             
             <div className="space-y-4">
               <div>
@@ -966,6 +1219,7 @@ export default function SkillSwap() {
                   placeholder="Tell others about yourself..."
                   className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none h-24"
                 />
+                <FieldError message={profileErrors.bio} />
               </div>
               
               <button
@@ -1063,6 +1317,45 @@ export default function SkillSwap() {
                 </button>
               </div>
             </div>
+          </div>
+          <FieldError message={profileErrors.skills} />
+
+          <div className="mt-6 bg-gray-800 p-6 rounded-lg border border-green-500">
+            <h3 className="text-xl font-bold text-green-400 mb-4">Clubs & Activities</h3>
+            <div className="mb-4 space-y-2">
+              {(clubs.length > 0 ? clubs : userProfile?.clubs || []).map((club, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
+                  <span className="text-white">{club}</span>
+                  <button
+                    onClick={() => setClubs(clubs.filter((_, i) => i !== idx))}
+                    className="text-red-400 hover:text-red-300"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex space-x-2">
+              <input
+                type="text"
+                value={newClub}
+                onChange={(e) => setNewClub(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    addClub();
+                  }
+                }}
+                placeholder="Add a club or activity..."
+                className="flex-1 px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-green-500 focus:outline-none"
+              />
+              <button
+                onClick={addClub}
+                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition"
+              >
+                Add
+              </button>
+            </div>
+            <FieldError message={profileErrors.clubs} />
           </div>
         </div>
       </div>
