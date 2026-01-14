@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
 import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home } from 'lucide-react';
 
 const firebaseConfig = {
@@ -17,6 +18,11 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app);
+const createSessionFn = httpsCallable(functions, 'createSession');
+const updateSessionStatusFn = httpsCallable(functions, 'updateSessionStatus');
+const deleteUserFn = httpsCallable(functions, 'deleteUserAccount');
+const createAuditLogFn = httpsCallable(functions, 'createAuditLog');
 
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
@@ -161,10 +167,8 @@ export default function SkillSwap() {
           achievements: [],
           sessionsCompleted: 0
         });
-        await addDoc(collection(db, 'auditLogs'), {
-          action: 'USER_REGISTERED',
-          userId: userCred.user.uid,
-          timestamp: Timestamp.now()
+        await createAuditLogFn({
+          action: 'USER_REGISTERED'
         });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
@@ -210,24 +214,11 @@ export default function SkillSwap() {
     }
     
     try {
-      const sessionDoc = await addDoc(collection(db, 'sessions'), {
-        requesterId: user.uid,
-        requesterName: userProfile.name,
+      await createSessionFn({
         providerId: selectedUser.id,
-        providerName: selectedUser.name,
         skill: sessionSkill,
-        startTime: new Date(`${sessionDate}T${sessionTime}`),
-        location: sessionLocation,
-        status: 'pending',
-        participants: [user.uid, selectedUser.id],
-        createdAt: Timestamp.now()
-      });
-      
-      await addDoc(collection(db, 'auditLogs'), {
-        action: 'SESSION_REQUESTED',
-        userId: user.uid,
-        sessionId: sessionDoc.id,
-        timestamp: Timestamp.now()
+        startTime: new Date(`${sessionDate}T${sessionTime}`).toISOString(),
+        location: sessionLocation
       });
       
       alert('Session requested!');
@@ -244,24 +235,13 @@ export default function SkillSwap() {
 
   const updateSessionStatus = async (sessionId, status) => {
     try {
-      await updateDoc(doc(db, 'sessions', sessionId), { status });
+      const response = await updateSessionStatusFn({ sessionId, status });
       
-      if (status === 'completed') {
-        const session = sessions.find(s => s.id === sessionId);
-        const newCount = (userProfile.sessionsCompleted || 0) + 1;
-        await updateDoc(doc(db, 'users', user.uid), {
-          sessionsCompleted: newCount
-        });
-        
+      if (status === 'completed' && response.data?.sessionsCompleted !== undefined) {
+        const newCount = response.data.sessionsCompleted;
+        setUserProfile({ ...userProfile, sessionsCompleted: newCount });
         checkAchievements(newCount);
       }
-      
-      await addDoc(collection(db, 'auditLogs'), {
-        action: `SESSION_${status.toUpperCase()}`,
-        userId: user.uid,
-        sessionId,
-        timestamp: Timestamp.now()
-      });
       
       loadUserData();
     } catch (error) {
@@ -359,13 +339,7 @@ export default function SkillSwap() {
     if (!window.confirm('Delete this user?')) return;
     
     try {
-      await deleteDoc(doc(db, 'users', userId));
-      await addDoc(collection(db, 'auditLogs'), {
-        action: 'USER_DELETED',
-        userId: user.uid,
-        targetUserId: userId,
-        timestamp: Timestamp.now()
-      });
+      await deleteUserFn({ targetUserId: userId });
       loadUserData();
     } catch (error) {
       alert(error.message);
