@@ -169,6 +169,88 @@ const isSecureContext = () => {
   return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 };
 
+const MAX_SKILLS = 12;
+const MAX_BIO_LENGTH = 280;
+const MAX_MESSAGE_LENGTH = 500;
+const MAX_RATING_COMMENT_LENGTH = 300;
+const MAX_CLUB_DESCRIPTION_LENGTH = 500;
+const MAX_CLUB_FIELD_LENGTH = 120;
+const SKILL_NAME_PATTERN = /^[A-Za-z0-9 .&+'-]{2,40}$/;
+
+const validateSkillName = (skillName) => {
+  const trimmed = skillName.trim();
+  if (!trimmed) return 'Skill name is required.';
+  if (!SKILL_NAME_PATTERN.test(trimmed)) {
+    return 'Skill names must be 2-40 characters and can include letters, numbers, spaces, and . & + \' -.';
+  }
+  return '';
+};
+
+const validateSkillList = (skills, label) => {
+  if (skills.length > MAX_SKILLS) {
+    return `Limit ${label} skills to ${MAX_SKILLS}.`;
+  }
+  for (const skill of skills) {
+    const error = validateSkillName(skill.name || '');
+    if (error) {
+      return `${label} skill error: ${error}`;
+    }
+  }
+  return '';
+};
+
+const validateBio = (bioText) => {
+  if (bioText.length > MAX_BIO_LENGTH) {
+    return `Bio must be ${MAX_BIO_LENGTH} characters or less.`;
+  }
+  return '';
+};
+
+const validateMessage = (messageText) => {
+  const trimmed = messageText.trim();
+  if (!trimmed) return 'Message cannot be empty.';
+  if (trimmed.length > MAX_MESSAGE_LENGTH) {
+    return `Message must be ${MAX_MESSAGE_LENGTH} characters or less.`;
+  }
+  return '';
+};
+
+const validateRating = (score, comment) => {
+  if (score < 1 || score > 5) {
+    return 'Rating must be between 1 and 5.';
+  }
+  if (comment.trim().length > MAX_RATING_COMMENT_LENGTH) {
+    return `Rating comment must be ${MAX_RATING_COMMENT_LENGTH} characters or less.`;
+  }
+  return '';
+};
+
+const validateClubDetails = (details) => {
+  if (!details.name.trim()) return 'Club name is required.';
+  if (details.name.trim().length < 2 || details.name.trim().length > 60) {
+    return 'Club name must be 2-60 characters.';
+  }
+  if (details.description.trim().length > MAX_CLUB_DESCRIPTION_LENGTH) {
+    return `Club description must be ${MAX_CLUB_DESCRIPTION_LENGTH} characters or less.`;
+  }
+  if (details.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details.contactEmail)) {
+    return 'Club contact email must be valid.';
+  }
+  if (details.meetingLocation.trim().length > MAX_CLUB_FIELD_LENGTH) {
+    return `Meeting location must be ${MAX_CLUB_FIELD_LENGTH} characters or less.`;
+  }
+  if (details.meetingSchedule.trim().length > MAX_CLUB_FIELD_LENGTH) {
+    return `Meeting schedule must be ${MAX_CLUB_FIELD_LENGTH} characters or less.`;
+  }
+  return '';
+};
+
+const isSecureContext = () => {
+  if (typeof window === 'undefined') return true;
+  if (window.location.protocol === 'https:') return true;
+  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+};
+
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
   { id: 'five_sessions', name: 'Getting Started', description: 'Complete 5 sessions', icon: '🌟' },
@@ -278,6 +360,10 @@ export default function SkillSwap() {
   const logAuditEvent = async (action, payload = {}) => {
     await callFunction('logAuditEvent', { action, ...payload });
   };
+
+  useEffect(() => {
+    setSecureTransport(isSecureContext());
+  }, []);
 
   useEffect(() => {
     setSecureTransport(isSecureContext());
@@ -770,6 +856,20 @@ export default function SkillSwap() {
       alert('This user is not accepting session requests.');
       return;
     }
+
+    const skillError = validateSkillName(sessionSkill);
+    if (skillError) {
+      alert(skillError);
+      return;
+    }
+    if (sessionLocation && sessionLocation.trim().length > MAX_CLUB_FIELD_LENGTH) {
+      alert(`Location must be ${MAX_CLUB_FIELD_LENGTH} characters or less.`);
+      return;
+    }
+    if (selectedUser.allowRequestsFrom === 'none') {
+      alert('This user is not accepting session requests.');
+      return;
+    }
     
     const sanitizedSkill = validateTextField('Session skill', sessionSkill, TEXT_LIMITS.sessionSkill, true);
     if (sanitizedSkill === null) {
@@ -787,6 +887,8 @@ export default function SkillSwap() {
         providerId: selectedUser.id,
         providerName: selectedUser.name,
         skill: sessionSkill.trim(),
+        startTime: new Date(`${sessionDate}T${sessionTime}`),
+        location: sessionLocation.trim(),
         startTime: new Date(`${sessionDate}T${sessionTime}`),
         location: sessionLocation.trim(),
         skill: sanitizedSkill,
