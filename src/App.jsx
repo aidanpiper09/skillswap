@@ -100,6 +100,13 @@ export default function SkillSwap() {
   // Search
   const [searchTerm, setSearchTerm] = useState('');
 
+  const logAuditEvent = async (payload) => {
+    const logAuditEventCallable = httpsCallable(functions, 'logAuditEvent');
+    await logAuditEventCallable(payload);
+  };
+
+  const updateSessionStatusCallable = httpsCallable(functions, 'updateSessionStatus');
+
   useEffect(() => {
     const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -336,6 +343,7 @@ export default function SkillSwap() {
           achievements: [],
           sessionsCompleted: 0
         });
+        await logAuditEvent({ action: 'USER_REGISTERED' });
         await createAuditLogFn({
           action: 'USER_REGISTERED'
         });
@@ -429,6 +437,14 @@ export default function SkillSwap() {
       await createSessionFn({
         providerId: selectedUser.id,
         skill: sessionSkill,
+        startTime: new Date(`${sessionDate}T${sessionTime}`),
+        location: sessionLocation,
+        status: 'pending',
+        participants: [user.uid, selectedUser.id],
+        createdAt: Timestamp.now()
+      });
+      
+      await logAuditEvent({ action: 'SESSION_REQUESTED', sessionId: sessionDoc.id });
         startTime: new Date(`${sessionDate}T${sessionTime}`).toISOString(),
         location: sessionLocation
       });
@@ -449,6 +465,7 @@ export default function SkillSwap() {
   const updateSessionStatus = async (sessionId, status) => {
     setSessionFeedback(null);
     try {
+      await updateSessionStatusCallable({ sessionId, status });
       const response = await updateSessionStatusFn({ sessionId, status });
       
       if (status === 'completed' && response.data?.sessionsCompleted !== undefined) {
@@ -584,6 +601,8 @@ export default function SkillSwap() {
     if (!window.confirm('Delete this user?')) return;
     
     try {
+      await deleteDoc(doc(db, 'users', userId));
+      await logAuditEvent({ action: 'USER_DELETED', targetUserId: userId });
       await deleteUserFn({ targetUserId: userId });
       const deleteUserAndData = httpsCallable(functions, 'deleteUserAndData');
       await deleteUserAndData({ userId });
@@ -1434,7 +1453,7 @@ export default function SkillSwap() {
                   <div key={log.id} className="bg-gray-700 p-3 rounded-lg text-sm">
                     <p className="text-white font-semibold">{log.action}</p>
                     <p className="text-gray-400 text-xs">
-                      {log.timestamp?.toDate?.()?.toLocaleString()}
+                      {(log.createdAt || log.timestamp)?.toDate?.()?.toLocaleString()}
                     </p>
                   </div>
                 ))}
