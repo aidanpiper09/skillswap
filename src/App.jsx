@@ -33,6 +33,8 @@ import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, si
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
@@ -433,6 +435,14 @@ export default function SkillSwap() {
   
   // Admin states
   const [adminUsers, setAdminUsers] = useState([]);
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalSessions: 0,
+    activeSessions: 0,
+    pendingSessions: 0,
+    topSkills: [],
+    ratingsSummary: null,
+    recentActivity: []
   const [adminSessions, setAdminSessions] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [adminReports, setAdminReports] = useState({
@@ -743,6 +753,8 @@ export default function SkillSwap() {
     if (page === 'admin' && isAdmin) {
       const usersSnap = await getDocs(collection(db, 'users'));
       setAdminUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      await fetchAdminReports(usersSnap.docs.length);
       
       const sessionsSnap = await getDocs(collection(db, 'sessions'));
       setAdminSessions(sessionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -780,6 +792,31 @@ export default function SkillSwap() {
     }
   };
 
+  const fetchAdminReports = async (totalUsers) => {
+    try {
+      const sessionCountsCallable = httpsCallable(functions, 'getAdminSessionCounts');
+      const ratingsSummaryCallable = httpsCallable(functions, 'getAdminRatingsSummary');
+      const topSkillsCallable = httpsCallable(functions, 'getAdminTopSkills');
+      const recentActivityCallable = httpsCallable(functions, 'getAdminRecentActivity');
+
+      const [sessionCounts, ratingsSummary, topSkills, recentActivity] = await Promise.all([
+        sessionCountsCallable(),
+        ratingsSummaryCallable(),
+        topSkillsCallable(),
+        recentActivityCallable()
+      ]);
+
+      setStats({
+        totalUsers,
+        totalSessions: sessionCounts.data.totalSessions || 0,
+        activeSessions: sessionCounts.data.byStatus?.accepted || 0,
+        pendingSessions: sessionCounts.data.byStatus?.pending || 0,
+        topSkills: topSkills.data.topSkills || [],
+        ratingsSummary: ratingsSummary.data,
+        recentActivity: recentActivity.data.activity || []
+      });
+    } catch (error) {
+      console.error('Failed to load admin reports', error);
   // Stats module: compute admin dashboard counts and top skills list.
   const calculateStats = (users, sessions) => {
     const skillCounts = {};
@@ -2871,17 +2908,20 @@ function App() {
             <div className="bg-gray-800 p-6 rounded-lg border border-green-500">
               <p className="text-gray-400 text-sm">Avg. Rating</p>
               <p className="text-3xl font-bold text-green-400">
+                {stats.activeSessions || 0}
                 {(adminReports.ratingsSummary?.averageScore || 0).toFixed(1)}
               </p>
             </div>
             <div className="bg-gray-800 p-6 rounded-lg border border-yellow-500">
               <p className="text-gray-400 text-sm">Open Flags</p>
               <p className="text-3xl font-bold text-yellow-400">
+                {stats.pendingSessions || 0}
                 {adminReports.moderationFlags?.openFlags || 0}
               </p>
             </div>
           </div>
 
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <div className="bg-gray-800 p-6 rounded-lg border border-green-500">
               <h3 className="text-xl font-bold text-white mb-4 flex items-center">
@@ -2921,6 +2961,7 @@ function App() {
                 Top Skills Requested
               </h3>
               <div className="space-y-3">
+                {stats.topSkills?.map(({ skill, count }, idx) => (
                 {adminReports.topSkills?.map(([skill, count], idx) => (
                   <div key={idx} className="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
                     <span className="text-white font-semibold">{skill}</span>
@@ -2935,16 +2976,56 @@ function App() {
               </div>
             </div>
 
+            <div className="bg-gray-800 p-6 rounded-lg border border-green-500">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+                <Star className="mr-2 text-green-400" />
+                Ratings Summary
+              </h3>
+              {stats.ratingsSummary ? (
+                <div className="space-y-3 text-sm text-gray-300">
+                  <div className="flex items-center justify-between">
+                    <span>Average Rating</span>
+                    <span className="font-semibold text-green-300">
+                      {stats.ratingsSummary.averageScore?.toFixed(2) || '0.00'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Total Ratings</span>
+                    <span className="font-semibold text-green-300">
+                      {stats.ratingsSummary.totalRatings || 0}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {[5, 4, 3, 2, 1].map(score => (
+                      <div key={score} className="flex items-center justify-between text-xs text-gray-400">
+                        <span>{score} stars</span>
+                        <span>{stats.ratingsSummary.scoreBreakdown?.[score] || 0}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-4">No ratings yet</p>
+              )}
+            </div>
+
             <div className="bg-gray-800 p-6 rounded-lg border border-blue-500">
               <h3 className="text-xl font-bold text-white mb-4 flex items-center">
                 <BarChart3 className="mr-2 text-blue-400" />
                 Recent Activity
               </h3>
               <div className="space-y-2 max-h-64 overflow-y-auto">
-                {auditLogs.slice(0, 10).map(log => (
+                {stats.recentActivity.map(log => (
                   <div key={log.id} className="bg-gray-700 p-3 rounded-lg text-sm">
                     <p className="text-white font-semibold">{log.action}</p>
                     <p className="text-gray-400 text-xs">
+                      {log.timestamp ? new Date(log.timestamp).toLocaleString() : 'Unknown time'}
+                    </p>
+                  </div>
+                ))}
+                {stats.recentActivity.length === 0 && (
+                  <p className="text-gray-500 text-center py-4">No recent activity</p>
+                )}
                       {log.createdAt?.toDate?.()?.toLocaleString() || log.timestamp?.toDate?.()?.toLocaleString() || log.createdAt}
                       {log.createdAt?.toDate?.()?.toLocaleString()}
                       {(log.createdAt || log.timestamp)?.toDate?.()?.toLocaleString()}
