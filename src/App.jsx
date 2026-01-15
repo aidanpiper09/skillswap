@@ -31,6 +31,59 @@ const updateSessionStatusFn = httpsCallable(functions, 'updateSessionStatus');
 const deleteUserFn = httpsCallable(functions, 'deleteUserAccount');
 const createAuditLogFn = httpsCallable(functions, 'createAuditLog');
 
+const TEXT_LIMITS = {
+  bio: 500,
+  skill: 60,
+  sessionSkill: 80,
+  sessionLocation: 120,
+  message: 1000,
+  ratingComment: 300,
+  clubDescription: 500
+};
+
+const sanitizeText = (value) => {
+  const normalized = String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+
+  return normalized
+    .replace(/[ \t\f\v]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
+const sanitizeSingleLine = (value) => sanitizeText(value).replace(/\n+/g, ' ').trim();
+
+const validateTextField = (label, value, maxLength, singleLine = false) => {
+  const sanitized = singleLine ? sanitizeSingleLine(value) : sanitizeText(value);
+
+  if (sanitized.length > maxLength) {
+    alert(`${label} must be ${maxLength} characters or less.`);
+    return null;
+  }
+
+  return sanitized;
+};
+
+const sanitizeSkillList = (skills, label) => {
+  const sanitized = [];
+
+  for (const skill of skills) {
+    const cleanName = sanitizeSingleLine(skill.name);
+    if (!cleanName) {
+      alert(`${label} skill names cannot be blank.`);
+      return null;
+    }
+    if (cleanName.length > TEXT_LIMITS.skill) {
+      alert(`${label} skill names must be ${TEXT_LIMITS.skill} characters or less.`);
+      return null;
+    }
+    sanitized.push({ ...skill, name: cleanName });
+  }
+
+  return sanitized;
+};
+
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
   { id: 'five_sessions', name: 'Getting Started', description: 'Complete 5 sessions', icon: '🌟' },
@@ -402,6 +455,30 @@ export default function SkillSwap() {
   };
 
   const updateProfile = async () => {
+    const sanitizedBio = validateTextField('Bio', bio, TEXT_LIMITS.bio);
+    if (sanitizedBio === null) {
+      return;
+    }
+    const sanitizedOfferedSkills = sanitizeSkillList(offeredSkills, 'Offered');
+    if (sanitizedOfferedSkills === null) {
+      return;
+    }
+    const sanitizedSoughtSkills = sanitizeSkillList(soughtSkills, 'Sought');
+    if (sanitizedSoughtSkills === null) {
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        bio: sanitizedBio,
+        offeredSkills: sanitizedOfferedSkills,
+        soughtSkills: sanitizedSoughtSkills
+      });
+      setBio(sanitizedBio);
+      setOfferedSkills(sanitizedOfferedSkills);
+      setSoughtSkills(sanitizedSoughtSkills);
+      setUserProfile({ ...userProfile, bio: sanitizedBio, offeredSkills: sanitizedOfferedSkills, soughtSkills: sanitizedSoughtSkills });
+      alert('Profile updated!');
     setProfileFeedback(null);
     if (!validateProfileForm()) {
       setProfileFeedback({ type: 'error', message: 'Please update the highlighted fields.' });
@@ -423,6 +500,14 @@ export default function SkillSwap() {
   };
 
   const addSkill = () => {
+    const sanitizedSkill = validateTextField('Skill', newSkill, TEXT_LIMITS.skill, true);
+    if (sanitizedSkill === null || !sanitizedSkill) {
+      return;
+    }
+    if (skillType === 'offered') {
+      setOfferedSkills([...offeredSkills, { name: sanitizedSkill, proficiency: 'intermediate' }]);
+    } else {
+      setSoughtSkills([...soughtSkills, { name: sanitizedSkill, interest: 'high' }]);
     if (!newSkill.trim()) {
       setProfileFeedback({ type: 'error', message: 'Add a skill name before saving.' });
       return;
@@ -470,13 +555,26 @@ export default function SkillSwap() {
       setSessionFeedback({ type: 'error', message: 'Please complete the required fields.' });
       return;
     }
-    
+
+    const sanitizedSkill = validateTextField('Session skill', sessionSkill, TEXT_LIMITS.sessionSkill, true);
+    if (sanitizedSkill === null) {
+      return;
+    }
+    const sanitizedLocation = sessionLocation
+      ? validateTextField('Session location', sessionLocation, TEXT_LIMITS.sessionLocation, true)
+      : '';
+    if (sanitizedLocation === null) {
+      return;
+    }
+
     try {
       await createSessionFn({
         providerId: selectedUser.id,
+        providerName: selectedUser.name,
+        skill: sanitizedSkill,
         skill: sessionSkill,
         startTime: new Date(`${sessionDate}T${sessionTime}`),
-        location: sessionLocation,
+        location: sanitizedLocation,
         status: 'pending',
         participants: [user.uid, selectedUser.id],
         createdAt: Timestamp.now()
@@ -579,6 +677,13 @@ export default function SkillSwap() {
   };
 
   const submitRating = async (sessionId) => {
+    const sanitizedComment = ratingComment
+      ? validateTextField('Rating comment', ratingComment, TEXT_LIMITS.ratingComment)
+      : '';
+    if (sanitizedComment === null) {
+      return;
+    }
+
     setRatingFeedback(null);
     if (!validateRatingForm()) {
       setRatingFeedback({ type: 'error', message: 'Please fix the rating details.' });
@@ -624,6 +729,7 @@ export default function SkillSwap() {
         sessionId,
         raterId: user.uid,
         rateeId,
+        score: ratingScore,
         score: ratingScoreValue,
         comment: sanitizedComment,
         createdAt: Timestamp.now()
@@ -651,6 +757,10 @@ export default function SkillSwap() {
   };
 
   const sendMessage = async () => {
+    if (!newMessage.trim() || !selectedSession) return;
+
+    const sanitizedMessage = validateTextField('Message', newMessage, TEXT_LIMITS.message);
+    if (sanitizedMessage === null || !sanitizedMessage) {
     setMessageFeedback(null);
     if (!validateMessageForm()) {
       setMessageFeedback({ type: 'error', message: 'Write a message before sending.' });
@@ -662,7 +772,7 @@ export default function SkillSwap() {
         sessionId: selectedSession.id,
         fromUserId: user.uid,
         fromName: userProfile.name,
-        body: newMessage,
+        body: sanitizedMessage,
         createdAt: Timestamp.now()
       });
       
