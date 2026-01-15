@@ -50,7 +50,6 @@ export default function SkillSwap() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState('student');
   const [gradYear, setGradYear] = useState('2026');
   const [isRegister, setIsRegister] = useState(false);
   const [authErrors, setAuthErrors] = useState({});
@@ -334,7 +333,7 @@ export default function SkillSwap() {
         await setDoc(doc(db, 'users', userCred.user.uid), {
           name,
           email,
-          role,
+          role: 'student',
           gradYear,
           createdAt: Timestamp.now(),
           offeredSkills: [],
