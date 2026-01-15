@@ -34,6 +34,72 @@ service cloud.firestore {
       return isSignedIn() && userDoc(request.auth.uid).data.role == 'admin';
     }
 
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function validSkillName(name) {
+      return name is string && name.matches('^[A-Za-z0-9 .&+\\'\\-]{2,40}$');
+    }
+
+    function validSkillList(skills) {
+      return skills is list && skills.size() <= 12 && skills.all(skill =>
+        skill is map && skill.name is string && validSkillName(skill.name)
+      );
+    }
+
+    function validBio(bio) {
+      return bio is string && bio.size() <= 280;
+    }
+
+    function validClubDetails(data) {
+      return data.name is string
+        && data.name.size() >= 2
+        && data.name.size() <= 60
+        && data.description is string
+        && data.description.size() <= 500
+        && data.contactEmail is string
+        && data.contactEmail.matches('^$|^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$')
+        && data.meetingLocation is string
+        && data.meetingLocation.size() <= 120
+        && data.meetingSchedule is string
+        && data.meetingSchedule.size() <= 120;
+    }
+
+    function canViewProfile(data, userId) {
+      return data.profileVisibility == 'public'
+        || (data.profileVisibility == 'members' && isSignedIn())
+        || (data.profileVisibility == 'private' && isOwner(userId))
+        || isAdmin();
+    }
+
+    function allowRequestsFrom(userId) {
+      return userDoc(userId).data.allowRequestsFrom != 'none';
+    }
+
+    function allowMessagesFrom(userId) {
+      return userDoc(userId).data.allowMessagesFrom != 'none';
+    }
+
+    match /users/{userId} {
+      allow get, list: if canViewProfile(resource.data, userId);
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasAll(['name', 'email', 'role', 'gradYear', 'createdAt', 'offeredSkills', 'soughtSkills', 'achievements', 'sessionsCompleted', 'profileVisibility', 'allowRequestsFrom', 'allowMessagesFrom'])
+        && validSkillList(request.resource.data.offeredSkills)
+        && validSkillList(request.resource.data.soughtSkills)
+        && validBio(request.resource.data.bio ?? '')
+        && request.resource.data.profileVisibility in ['public', 'members', 'private']
+        && request.resource.data.allowRequestsFrom in ['anyone', 'none']
+        && request.resource.data.allowMessagesFrom in ['participants', 'none'];
+      allow update: if isOwner(userId)
+        && validSkillList(request.resource.data.offeredSkills)
+        && validSkillList(request.resource.data.soughtSkills)
+        && validBio(request.resource.data.bio ?? '')
+        && request.resource.data.profileVisibility in ['public', 'members', 'private']
+        && request.resource.data.allowRequestsFrom in ['anyone', 'none']
+        && request.resource.data.allowMessagesFrom in ['participants', 'none']
+        && request.resource.data.role == resource.data.role;
     function isOwner(uid) {
       return isSignedIn() && request.auth.uid == uid;
     }
@@ -135,6 +201,16 @@ service cloud.firestore {
     }
 
     match /sessions/{sessionId} {
+      allow get, list: if isAdmin() || (isSignedIn() && resource.data.participants.hasAny([request.auth.uid]));
+      allow create: if isSignedIn()
+        && request.auth.uid == request.resource.data.requesterId
+        && request.resource.data.participants.hasAll([request.resource.data.requesterId, request.resource.data.providerId])
+        && request.resource.data.skill is string
+        && validSkillName(request.resource.data.skill)
+        && request.resource.data.location is string
+        && request.resource.data.location.size() <= 120
+        && allowRequestsFrom(request.resource.data.providerId);
+      allow update: if isAdmin() || (isSignedIn() && resource.data.participants.hasAny([request.auth.uid]));
       allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
       allow create: if isSignedIn()
         && request.resource.data.requesterId == request.auth.uid
@@ -162,6 +238,42 @@ service cloud.firestore {
     }
 
     match /messages/{messageId} {
+      allow get, list: if isAdmin() || (isSignedIn()
+        && get(/databases/$(database)/documents/sessions/$(resource.data.sessionId)).data.participants.hasAny([request.auth.uid]));
+      allow create: if isSignedIn()
+        && request.resource.data.sessionId is string
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.body is string
+        && request.resource.data.body.size() > 0
+        && request.resource.data.body.size() <= 500
+        && allowMessagesFrom(request.resource.data.fromUserId)
+        && allowMessagesFrom(get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data.requesterId)
+        && allowMessagesFrom(get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data.providerId)
+        && get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data.participants.hasAny([request.auth.uid]);
+      allow update, delete: if isAdmin();
+    }
+
+    match /ratings/{ratingId} {
+      allow get, list: if isAdmin() || (isSignedIn() && resource.data.rateeId == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.score is int
+        && request.resource.data.score >= 1
+        && request.resource.data.score <= 5
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() <= 300
+        && get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data.participants.hasAny([request.auth.uid]);
+      allow update, delete: if isAdmin();
+    }
+
+    match /clubDetails/{clubId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if isAdmin() && validClubDetails(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow get, list: if isAdmin();
+      allow create: if isSignedIn();
       allow read: if isSignedIn() && isSessionParticipant(resource.data.sessionId);
       allow create: if isSignedIn()
         && isSessionParticipant(request.resource.data.sessionId)
