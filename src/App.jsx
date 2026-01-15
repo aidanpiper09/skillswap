@@ -3,6 +3,11 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onIdTokenChanged, getIdTokenResult } from 'firebase/auth';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
 import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home } from 'lucide-react';
 
@@ -20,6 +25,10 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const functions = getFunctions(app);
+const createSessionFn = httpsCallable(functions, 'createSession');
+const updateSessionStatusFn = httpsCallable(functions, 'updateSessionStatus');
+const deleteUserFn = httpsCallable(functions, 'deleteUserAccount');
+const createAuditLogFn = httpsCallable(functions, 'createAuditLog');
 
 const ACHIEVEMENTS = [
   { id: 'first_session', name: 'First Steps', description: 'Complete your first session', icon: '🎯' },
@@ -35,13 +44,13 @@ export default function SkillSwap() {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState('login');
+  const [isAdmin, setIsAdmin] = useState(false);
   const [profileInitialized, setProfileInitialized] = useState(false);
   
   // Auth states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState('student');
   const [gradYear, setGradYear] = useState('2026');
   const [isRegister, setIsRegister] = useState(false);
   const [authErrors, setAuthErrors] = useState({});
@@ -91,18 +100,29 @@ export default function SkillSwap() {
   // Search
   const [searchTerm, setSearchTerm] = useState('');
 
+  const logAuditEvent = async (payload) => {
+    const logAuditEventCallable = httpsCallable(functions, 'logAuditEvent');
+    await logAuditEventCallable(payload);
+  };
+
+  const updateSessionStatusCallable = httpsCallable(functions, 'updateSessionStatus');
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+        const tokenResult = await getIdTokenResult(currentUser, true);
+        const hasAdminClaim = tokenResult?.claims?.admin === true;
+        setIsAdmin(hasAdminClaim);
         const profileDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (profileDoc.exists()) {
           setUserProfile(profileDoc.data());
-          setPage(profileDoc.data().role === 'admin' ? 'admin' : 'dashboard');
+          setPage(hasAdminClaim ? 'admin' : 'dashboard');
         } else {
           setPage('profile-setup');
         }
       } else {
+        setIsAdmin(false);
         setPage('login');
       }
       setProfileInitialized(false);
@@ -269,7 +289,7 @@ export default function SkillSwap() {
       setAllUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.id !== user.uid && u.role === 'student'));
     }
     
-    if (page === 'admin' && userProfile?.role === 'admin') {
+    if (page === 'admin' && isAdmin) {
       const usersSnap = await getDocs(collection(db, 'users'));
       setAdminUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       
@@ -324,7 +344,7 @@ export default function SkillSwap() {
         await setDoc(doc(db, 'users', userCred.user.uid), {
           name,
           email,
-          role,
+          role: 'student',
           gradYear,
           createdAt: Timestamp.now(),
           offeredSkills: [],
@@ -338,6 +358,9 @@ export default function SkillSwap() {
           action: 'USER_REGISTERED',
           userId: userCred.user.uid,
           timestamp: Timestamp.now()
+        await logAuditEvent({ action: 'USER_REGISTERED' });
+        await createAuditLogFn({
+          action: 'USER_REGISTERED'
         });
         setAuthFeedback({ type: 'success', message: 'Account created! Let’s finish your profile.' });
       } else {
@@ -352,6 +375,7 @@ export default function SkillSwap() {
   const handleLogout = async () => {
     await signOut(auth);
     setUserProfile(null);
+    setIsAdmin(false);
   };
 
   const updateProfile = async () => {
@@ -425,11 +449,8 @@ export default function SkillSwap() {
     }
     
     try {
-      const sessionDoc = await addDoc(collection(db, 'sessions'), {
-        requesterId: user.uid,
-        requesterName: userProfile.name,
+      await createSessionFn({
         providerId: selectedUser.id,
-        providerName: selectedUser.name,
         skill: sessionSkill,
         startTime: new Date(`${sessionDate}T${sessionTime}`),
         location: sessionLocation,
@@ -441,6 +462,9 @@ export default function SkillSwap() {
       await logAuditEvent('SESSION_REQUESTED', {
         sessionId: sessionDoc.id,
         targetUserId: selectedUser.id
+      await logAuditEvent({ action: 'SESSION_REQUESTED', sessionId: sessionDoc.id });
+        startTime: new Date(`${sessionDate}T${sessionTime}`).toISOString(),
+        location: sessionLocation
       });
       
       setSessionFeedback({ type: 'success', message: 'Session requested! You will be notified when it is accepted.' });
@@ -459,20 +483,32 @@ export default function SkillSwap() {
   const updateSessionStatus = async (sessionId, status) => {
     setSessionFeedback(null);
     try {
-      await updateDoc(doc(db, 'sessions', sessionId), { status });
+      await updateSessionStatusCallable({ sessionId, status });
+      const response = await updateSessionStatusFn({ sessionId, status });
       
-      if (status === 'completed') {
-        const session = sessions.find(s => s.id === sessionId);
-        const newCount = (userProfile.sessionsCompleted || 0) + 1;
-        await updateDoc(doc(db, 'users', user.uid), {
-          sessionsCompleted: newCount
-        });
-        
+      if (status === 'completed' && response.data?.sessionsCompleted !== undefined) {
+        const newCount = response.data.sessionsCompleted;
+        setUserProfile({ ...userProfile, sessionsCompleted: newCount });
         checkAchievements(newCount);
       }
       
       await logAuditEvent(`SESSION_${status.toUpperCase()}`, {
         sessionId
+      const updateStatus = httpsCallable(functions, 'updateSessionStatus');
+      await updateStatus({ sessionId, status });
+      
+      if (status === 'completed') {
+        const userSnapshot = await getDoc(doc(db, 'users', user.uid));
+        const updatedCount = userSnapshot.data()?.sessionsCompleted || 0;
+        const updatedAchievements = userSnapshot.data()?.achievements || [];
+        await checkAchievements(updatedCount, updatedAchievements);
+      }
+      
+      await addDoc(collection(db, 'auditLogs'), {
+        action: `SESSION_${status.toUpperCase()}`,
+        userId: user.uid,
+        sessionId,
+        timestamp: Timestamp.now()
       });
       
       setSessionFeedback({ type: 'success', message: `Session marked as ${status}.` });
@@ -483,26 +519,26 @@ export default function SkillSwap() {
     }
   };
 
-  const checkAchievements = async (sessionCount) => {
+  const checkAchievements = async (sessionCount, existingAchievements = userProfile.achievements || []) => {
     const newAchievements = [];
     
-    if (sessionCount === 1 && !userProfile.achievements?.includes('first_session')) {
+    if (sessionCount === 1 && !existingAchievements.includes('first_session')) {
       newAchievements.push('first_session');
     }
-    if (sessionCount === 5 && !userProfile.achievements?.includes('five_sessions')) {
+    if (sessionCount === 5 && !existingAchievements.includes('five_sessions')) {
       newAchievements.push('five_sessions');
     }
-    if (sessionCount === 10 && !userProfile.achievements?.includes('ten_sessions')) {
+    if (sessionCount === 10 && !existingAchievements.includes('ten_sessions')) {
       newAchievements.push('ten_sessions');
     }
     
     if (newAchievements.length > 0) {
       await updateDoc(doc(db, 'users', user.uid), {
-        achievements: [...(userProfile.achievements || []), ...newAchievements]
+        achievements: [...existingAchievements, ...newAchievements]
       });
       setUserProfile({
         ...userProfile,
-        achievements: [...(userProfile.achievements || []), ...newAchievements]
+        achievements: [...existingAchievements, ...newAchievements]
       });
     }
   };
@@ -587,6 +623,10 @@ export default function SkillSwap() {
     try {
       await deleteDoc(doc(db, 'users', userId));
       await logAuditEvent('USER_DELETED', { targetUserId: userId });
+      await logAuditEvent({ action: 'USER_DELETED', targetUserId: userId });
+      await deleteUserFn({ targetUserId: userId });
+      const deleteUserAndData = httpsCallable(functions, 'deleteUserAndData');
+      await deleteUserAndData({ userId });
       const deleteUserCascade = httpsCallable(functions, 'deleteUserCascade');
       await deleteUserCascade({ userId });
       loadUserData();
@@ -713,7 +753,7 @@ export default function SkillSwap() {
               </button>
             </div>
           )}
-          {userProfile?.role === 'admin' && (
+          {isAdmin && (
             <button onClick={() => setPage('admin')} className="flex items-center space-x-2 px-4 py-2 bg-orange-500 text-white rounded-lg">
               <Shield size={20} />
               <span>Admin Panel</span>
@@ -1369,7 +1409,7 @@ export default function SkillSwap() {
     );
   }
 
-  if (page === 'admin' && userProfile?.role === 'admin') {
+  if (page === 'admin' && isAdmin) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
         <Navigation />
@@ -1435,6 +1475,7 @@ export default function SkillSwap() {
                     <p className="text-white font-semibold">{log.action}</p>
                     <p className="text-gray-400 text-xs">
                       {log.createdAt?.toDate?.()?.toLocaleString()}
+                      {(log.createdAt || log.timestamp)?.toDate?.()?.toLocaleString()}
                     </p>
                   </div>
                 ))}
