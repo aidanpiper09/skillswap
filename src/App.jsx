@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onIdTokenChanged, getIdTokenResult } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
@@ -302,6 +303,16 @@ export default function SkillSwap() {
     }
   };
 
+  const logAuditEvent = async (action, payload = {}) => {
+    if (!auth.currentUser) return;
+    try {
+      const logEvent = httpsCallable(functions, 'logAuditEvent');
+      await logEvent({ action, ...payload });
+    } catch (error) {
+      console.error('Failed to log audit event', error);
+    }
+  };
+
   const calculateStats = (users, sessions) => {
     const skillCounts = {};
     const ratingsBySkill = {};
@@ -342,6 +353,11 @@ export default function SkillSwap() {
           achievements: [],
           sessionsCompleted: 0
         });
+        await logAuditEvent('USER_REGISTERED', { targetUserId: userCred.user.uid });
+        await addDoc(collection(db, 'auditLogs'), {
+          action: 'USER_REGISTERED',
+          userId: userCred.user.uid,
+          timestamp: Timestamp.now()
         await logAuditEvent({ action: 'USER_REGISTERED' });
         await createAuditLogFn({
           action: 'USER_REGISTERED'
@@ -443,6 +459,9 @@ export default function SkillSwap() {
         createdAt: Timestamp.now()
       });
       
+      await logAuditEvent('SESSION_REQUESTED', {
+        sessionId: sessionDoc.id,
+        targetUserId: selectedUser.id
       await logAuditEvent({ action: 'SESSION_REQUESTED', sessionId: sessionDoc.id });
         startTime: new Date(`${sessionDate}T${sessionTime}`).toISOString(),
         location: sessionLocation
@@ -473,6 +492,8 @@ export default function SkillSwap() {
         checkAchievements(newCount);
       }
       
+      await logAuditEvent(`SESSION_${status.toUpperCase()}`, {
+        sessionId
       const updateStatus = httpsCallable(functions, 'updateSessionStatus');
       await updateStatus({ sessionId, status });
       
@@ -601,6 +622,7 @@ export default function SkillSwap() {
     
     try {
       await deleteDoc(doc(db, 'users', userId));
+      await logAuditEvent('USER_DELETED', { targetUserId: userId });
       await logAuditEvent({ action: 'USER_DELETED', targetUserId: userId });
       await deleteUserFn({ targetUserId: userId });
       const deleteUserAndData = httpsCallable(functions, 'deleteUserAndData');
@@ -1452,6 +1474,7 @@ export default function SkillSwap() {
                   <div key={log.id} className="bg-gray-700 p-3 rounded-lg text-sm">
                     <p className="text-white font-semibold">{log.action}</p>
                     <p className="text-gray-400 text-xs">
+                      {log.createdAt?.toDate?.()?.toLocaleString()}
                       {(log.createdAt || log.timestamp)?.toDate?.()?.toLocaleString()}
                     </p>
                   </div>

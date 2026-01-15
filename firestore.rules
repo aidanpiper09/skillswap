@@ -22,6 +22,8 @@ service cloud.firestore {
     }
 
     match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
       allow read: if isSignedIn();
       allow write: if false;
     match /users/{userId} {
@@ -33,6 +35,20 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update, delete: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+    }
+
+    match /sessions/{sessionId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /messages/{messageId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /ratings/{ratingId} {
+      allow read, write: if isSignedIn();
       allow create: if isSignedIn()
         && request.auth.uid == userId
         && request.resource.data.role == 'student';
