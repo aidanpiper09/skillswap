@@ -17,6 +17,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
       return request.auth != null && request.auth.token.admin == true;
     }
 
@@ -38,6 +39,253 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function nonEmptyString(value, maxLength) {
+      return value is string && value.size() > 0 && value.size() <= maxLength;
+    }
+
+    function optionalString(value, maxLength) {
+      return value == null || (value is string && value.size() <= maxLength);
+    }
+
+    function validBio(bio) {
+      return optionalString(bio, 500);
+    }
+
+    function validSkill(skill) {
+      return skill is map
+        && nonEmptyString(skill.name, 60)
+        && (!('proficiency' in skill) || skill.proficiency in ['beginner', 'intermediate', 'advanced'])
+        && (!('interest' in skill) || skill.interest in ['low', 'medium', 'high']);
+    }
+
+    function validSkills(skills) {
+      return skills is list && skills.size() <= 20 && skills.all(skill => validSkill(skill));
+    }
+
+    function validAchievements(achievements) {
+      return achievements is list
+        && achievements.size() <= 25
+        && achievements.all(item => item is string && item.size() <= 40);
+    }
+
+    function validGradYear(value) {
+      return (value is string && value.size() == 4) || (value is int && value >= 2024 && value <= 2035);
+    }
+
+    function validPrivacy(privacy) {
+      return privacy is map
+        && (!('visibility' in privacy) || privacy.visibility in ['public', 'private'])
+        && (!('allowRequests' in privacy) || privacy.allowRequests is bool)
+        && (!('allowMessaging' in privacy) || privacy.allowMessaging is bool);
+    }
+
+    function userDoc(userId) {
+      return get(/databases/$(database)/documents/users/$(userId));
+    }
+
+    function userExists(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId));
+    }
+
+    function userAllowsRequests(userId) {
+      return userExists(userId)
+        && (!('privacy' in userDoc(userId).data)
+          || !('allowRequests' in userDoc(userId).data.privacy)
+          || userDoc(userId).data.privacy.allowRequests == true);
+    }
+
+    function userAllowsMessaging(userId) {
+      return userExists(userId)
+        && (!('privacy' in userDoc(userId).data)
+          || !('allowMessaging' in userDoc(userId).data.privacy)
+          || userDoc(userId).data.privacy.allowMessaging == true);
+    }
+
+    function userVisibilityAllows(userId) {
+      return isAdmin()
+        || isOwner(userId)
+        || (userExists(userId)
+          && (!('privacy' in userDoc(userId).data)
+            || !('visibility' in userDoc(userId).data.privacy)
+            || userDoc(userId).data.privacy.visibility == 'public'));
+    }
+
+    function validUserBase(data) {
+      return data.keys().hasOnly([
+        'name',
+        'email',
+        'role',
+        'gradYear',
+        'createdAt',
+        'offeredSkills',
+        'soughtSkills',
+        'achievements',
+        'sessionsCompleted',
+        'bio',
+        'privacy'
+      ])
+        && nonEmptyString(data.name, 80)
+        && nonEmptyString(data.email, 120)
+        && validGradYear(data.gradYear)
+        && data.createdAt is timestamp
+        && data.offeredSkills is list
+        && data.soughtSkills is list
+        && validSkills(data.offeredSkills)
+        && validSkills(data.soughtSkills)
+        && data.achievements is list
+        && validAchievements(data.achievements)
+        && data.sessionsCompleted is int
+        && data.sessionsCompleted >= 0
+        && validBio(data.bio)
+        && (!('privacy' in data) || validPrivacy(data.privacy));
+    }
+
+    function validUserCreate(data) {
+      return validUserBase(data)
+        && (data.role == 'student' || (data.role == 'admin' && isAdmin()));
+    }
+
+    function validUserUpdate(existingData, newData) {
+      return validUserBase(newData)
+        && (newData.role == existingData.role || isAdmin())
+        && newData.sessionsCompleted >= existingData.sessionsCompleted;
+    }
+
+    match /users/{userId} {
+      allow read: if userVisibilityAllows(userId);
+      allow create: if isOwner(userId) && validUserCreate(request.resource.data);
+      allow update: if (isOwner(userId) || isAdmin())
+        && validUserUpdate(resource.data, request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    function validSessionBase(data) {
+      return data.keys().hasOnly([
+        'requesterId',
+        'requesterName',
+        'providerId',
+        'providerName',
+        'skill',
+        'startTime',
+        'location',
+        'status',
+        'participants',
+        'createdAt'
+      ])
+        && nonEmptyString(data.requesterName, 80)
+        && nonEmptyString(data.providerName, 80)
+        && nonEmptyString(data.skill, 80)
+        && data.startTime is timestamp
+        && optionalString(data.location, 120)
+        && data.participants is list
+        && data.participants.size() == 2
+        && data.participants.hasAll([data.requesterId, data.providerId])
+        && data.requesterId != data.providerId
+        && data.createdAt is timestamp;
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid in resource.data.participants);
+      allow create: if isSignedIn()
+        && request.resource.data.requesterId == request.auth.uid
+        && validSessionBase(request.resource.data)
+        && request.resource.data.status == 'pending'
+        && userAllowsRequests(request.resource.data.providerId);
+      allow update: if isAdmin()
+        || (isSignedIn()
+          && request.auth.uid in resource.data.participants
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status'])
+          && request.resource.data.status in ['pending', 'accepted', 'declined', 'completed']);
+      allow delete: if isAdmin();
+    }
+
+    function validRating(data) {
+      return data.keys().hasOnly([
+        'sessionId',
+        'raterId',
+        'rateeId',
+        'score',
+        'comment',
+        'createdAt'
+      ])
+        && data.sessionId is string
+        && data.raterId is string
+        && data.rateeId is string
+        && data.raterId != data.rateeId
+        && data.score is int
+        && data.score >= 1
+        && data.score <= 5
+        && optionalString(data.comment, 500)
+        && data.createdAt is timestamp;
+    }
+
+    match /ratings/{ratingId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && (request.auth.uid == resource.data.raterId || request.auth.uid == resource.data.rateeId));
+      allow create: if isSignedIn()
+        && request.resource.data.raterId == request.auth.uid
+        && validRating(request.resource.data)
+        && exists(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId))
+        && get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data.participants
+          .hasAll([request.resource.data.raterId, request.resource.data.rateeId]);
+      allow update, delete: if isAdmin();
+    }
+
+    function validMessage(data) {
+      return data.keys().hasOnly([
+        'sessionId',
+        'fromUserId',
+        'fromName',
+        'body',
+        'createdAt'
+      ])
+        && data.sessionId is string
+        && data.fromUserId is string
+        && nonEmptyString(data.fromName, 80)
+        && nonEmptyString(data.body, 1000)
+        && data.createdAt is timestamp;
+    }
+
+    match /messages/{messageId} {
+      allow read: if isAdmin()
+        || (isSignedIn()
+          && exists(/databases/$(database)/documents/sessions/$(resource.data.sessionId))
+          && request.auth.uid in get(/databases/$(database)/documents/sessions/$(resource.data.sessionId)).data.participants);
+      allow create: if isSignedIn()
+        && request.resource.data.fromUserId == request.auth.uid
+        && validMessage(request.resource.data)
+        && exists(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId))
+        && request.auth.uid in get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data.participants
+        && get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data.participants
+          .all(uid => userAllowsMessaging(uid));
+      allow update, delete: if isAdmin();
+    }
+
+    function validClub(data) {
+      return data.keys().hasOnly([
+        'name',
+        'description',
+        'ownerId',
+        'createdAt',
+        'visibility'
+      ])
+        && nonEmptyString(data.name, 120)
+        && nonEmptyString(data.description, 500)
+        && data.ownerId is string
+        && data.createdAt is timestamp
+        && (!('visibility' in data) || data.visibility in ['public', 'private']);
+    }
+
+    match /clubs/{clubId} {
+      allow read: if isAdmin()
+        || (resource.data.visibility == 'public')
+        || (isSignedIn() && request.auth.uid == resource.data.ownerId);
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && validClub(request.resource.data);
+      allow update: if (isAdmin() || (isSignedIn() && request.auth.uid == resource.data.ownerId))
+        && validClub(request.resource.data);
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == resource.data.ownerId);
     function isAdmin() {
       return isSignedIn()
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
@@ -456,6 +704,12 @@ service cloud.firestore {
 
     match /auditLogs/{logId} {
       allow read: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['action', 'userId', 'sessionId', 'targetUserId', 'timestamp'])
+        && request.resource.data.action is string
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.timestamp is timestamp;
+      allow update, delete: if isAdmin();
       allow create, update, delete: if false;
     }
 
