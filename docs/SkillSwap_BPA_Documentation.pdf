@@ -1,0 +1,163 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+3 0 obj
+<< /Length 502 >>
+stream
+BT /F2 26 Tf 54 650 Td (SkillSwap Project Documentation) Tj ET
+BT /F1 12 Tf 54 620 Td 16 TL (Business Professionals of America \(BPA\)) Tj T* (Project: Student Talent Exchange Platform) Tj T* (Prepared for BPA competitive submission) Tj ET
+54 360 504 160 re S
+BT /F1 12 Tf 70 500 Td 16 TL (This document includes the project description, lifecycle and methodology,) Tj T* (system/application diagram, database conceptual model, works cited, and BPA) Tj T* (release forms required for submission.) Tj ET
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 0 0 R /MediaBox [0 0 612 792] /Contents 3 0 R /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> >>
+endobj
+5 0 obj
+<< /Length 1720 >>
+stream
+BT /F2 16 Tf 54 720 Td (Project Description) Tj ET
+BT /F1 11 Tf 54 690 Td 15 TL (SkillSwap is a student talent exchange platform that connects learners with peers who can teach) Tj T* (in-demand academic or technical skills. The web application supports secure registration,) Tj T* (profile-based skill listings, session requests, messaging, ratings, and administrative) Tj T* (oversight to ensure a safe and accountable experience.) Tj ET
+BT /F1 11 Tf 54 600 Td 15 TL (" Student dashboard with skill search, session scheduling, messaging, and rating workflows.) Tj T* (" Role-based authentication via Firebase Auth to separate student and admin experiences.) Tj T* (" Firestore data model for users, sessions, messages, ratings, and audit logs.) Tj T* (" Administrative analytics with session status tracking and user management.) Tj ET
+BT /F2 16 Tf 54 520 Td (Document Development Lifecycle & Methodology) Tj ET
+BT /F1 11 Tf 54 490 Td 15 TL (The documentation follows an iterative lifecycle aligned to the application build. The team) Tj T* (used a lightweight Agile approach with weekly checkpoints to validate requirements, design, and) Tj T* (implementation.) Tj ET
+BT /F1 11 Tf 54 420 Td 15 TL (" Discovery: captured user stories for students, mentors, and administrators.) Tj T* (" Design: produced UI flows, system architecture, and data model diagrams.) Tj T* (" Implementation: built React components, integrated Firebase Auth/Firestore, and logged admin analytics.) Tj T* (" Testing: performed manual acceptance tests for authentication, session scheduling, and messaging workflows.) Tj T* (" Deployment & maintenance: validated build outputs, documented operations, and prepared BPA submission assets.) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 0 0 R /MediaBox [0 0 612 792] /Contents 5 0 R /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> >>
+endobj
+7 0 obj
+<< /Length 1075 >>
+stream
+BT /F2 16 Tf 54 720 Td (System / Application Diagram) Tj ET
+BT /F1 11 Tf 54 690 Td 15 TL (The SkillSwap system centers on a React web application hosted with Vite and backed by Firebase) Tj T* (services for authentication, real-time data storage, and auditing.) Tj ET
+70 520 170 60 re S
+300 520 170 60 re S
+70 400 170 60 re S
+300 400 170 60 re S
+BT /F2 10 Tf 80 560 Td (Client \(Web App\)) Tj ET
+BT /F1 9 Tf 80 545 Td 12 TL (React + Vite UI) Tj T* (Student/Admin views) Tj ET
+BT /F2 10 Tf 310 560 Td (Firebase Auth) Tj ET
+BT /F1 9 Tf 310 545 Td 12 TL (Email/password auth) Tj T* (Role-based access) Tj ET
+BT /F2 10 Tf 80 440 Td (Firestore Database) Tj ET
+BT /F1 9 Tf 80 425 Td 12 TL (Users, Sessions) Tj T* (Messages, Ratings) Tj ET
+BT /F2 10 Tf 310 440 Td (Audit & Analytics) Tj ET
+BT /F1 9 Tf 310 425 Td 12 TL (Audit logs) Tj T* (Admin metrics) Tj ET
+240 550 m 300 550 l S
+155 520 m 155 460 l S
+385 520 m 385 460 l S
+BT /F1 8 Tf 240 570 Td 10 TL (Auth & data requests) Tj ET
+BT /F1 8 Tf 90 470 Td 10 TL (Session data) Tj ET
+BT /F1 8 Tf 320 470 Td 10 TL (Audit events) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 0 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> >>
+endobj
+9 0 obj
+<< /Length 1501 >>
+stream
+BT /F2 16 Tf 54 720 Td (Database Conceptual Model) Tj ET
+BT /F1 11 Tf 54 690 Td 15 TL (The conceptual model captures the core entities and relationships that support matchmaking,) Tj T* (communication, feedback, and administrative monitoring.) Tj ET
+60 520 200 100 re S
+320 520 200 100 re S
+60 350 200 90 re S
+320 350 200 90 re S
+190 200 200 80 re S
+BT /F2 10 Tf 70 600 Td (Users) Tj ET
+BT /F1 9 Tf 70 585 Td 12 TL (id \(uid\)) Tj T* (name, email) Tj T* (role, gradYear) Tj T* (skills offered/sought) Tj T* (sessionsCompleted) Tj ET
+BT /F2 10 Tf 330 600 Td (Sessions) Tj ET
+BT /F1 9 Tf 330 585 Td 12 TL (id) Tj T* (requesterId) Tj T* (providerId) Tj T* (skill, location) Tj T* (status, startTime) Tj ET
+BT /F2 10 Tf 70 430 Td (Messages) Tj ET
+BT /F1 9 Tf 70 415 Td 12 TL (id) Tj T* (sessionId) Tj T* (fromUserId) Tj T* (body, createdAt) Tj ET
+BT /F2 10 Tf 330 430 Td (Ratings) Tj ET
+BT /F1 9 Tf 330 415 Td 12 TL (id) Tj T* (sessionId) Tj T* (raterId) Tj T* (rateeId) Tj T* (score, comment) Tj ET
+BT /F2 10 Tf 200 260 Td (AuditLogs) Tj ET
+BT /F1 9 Tf 200 245 Td 12 TL (id) Tj T* (action) Tj T* (userId) Tj T* (timestamp) Tj ET
+260 570 m 320 570 l S
+160 520 m 160 440 l S
+420 520 m 420 440 l S
+240 350 m 240 250 l S
+360 350 m 360 250 l S
+240 250 m 360 250 l S
+BT /F1 8 Tf 200 580 Td 10 TL (Users participate in sessions) Tj ET
+BT /F1 8 Tf 120 450 Td 10 TL (Sessions have messages) Tj ET
+BT /F1 8 Tf 320 450 Td 10 TL (Sessions have ratings) Tj ET
+BT /F1 8 Tf 240 260 Td 10 TL (Audits track actions) Tj ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 0 0 R /MediaBox [0 0 612 792] /Contents 9 0 R /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> >>
+endobj
+11 0 obj
+<< /Length 391 >>
+stream
+BT /F2 16 Tf 54 720 Td (Works Cited) Tj ET
+BT /F1 11 Tf 54 690 Td 15 TL (" Firebase Documentation. https://firebase.google.com/docs \(accessed 2024-01-15\).) Tj T* (" React Documentation. https://react.dev \(accessed 2024-01-15\).) Tj T* (" Vite Documentation. https://vitejs.dev/guide \(accessed 2024-01-15\).) Tj T* (" Lucide React Icons. https://lucide.dev \(accessed 2024-01-15\).) Tj ET
+endstream
+endobj
+12 0 obj
+<< /Type /Page /Parent 0 0 R /MediaBox [0 0 612 792] /Contents 11 0 R /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> >>
+endobj
+13 0 obj
+<< /Length 1134 >>
+stream
+BT /F2 16 Tf 54 720 Td (BPA Release Forms) Tj ET
+BT /F2 12 Tf 54 690 Td (Media Release Form) Tj ET
+BT /F1 10 Tf 54 670 Td 14 TL (I grant permission for BPA and SkillSwap project staff to use photographs, video, and project) Tj T* (materials for competition, promotion, and educational purposes. I understand no compensation is) Tj T* (provided.) Tj ET
+174 620 m 558 620 l S
+BT /F1 10 Tf 54 618 Td 12 TL (Participant Name) Tj ET
+254 590 m 558 590 l S
+BT /F1 10 Tf 54 588 Td 12 TL (Parent/Guardian \(if minor\)) Tj ET
+134 560 m 558 560 l S
+BT /F1 10 Tf 54 558 Td 12 TL (Signature) Tj ET
+94 530 m 558 530 l S
+BT /F1 10 Tf 54 528 Td 12 TL (Date) Tj ET
+BT /F2 12 Tf 54 490 Td (Project Use & Distribution Release Form) Tj ET
+BT /F1 10 Tf 54 470 Td 14 TL (I authorize BPA and SkillSwap project staff to reproduce and distribute the project) Tj T* (documentation and related materials for judging, archival, or educational use.) Tj ET
+174 420 m 558 420 l S
+BT /F1 10 Tf 54 418 Td 12 TL (Participant Name) Tj ET
+134 390 m 558 390 l S
+BT /F1 10 Tf 54 388 Td 12 TL (Signature) Tj ET
+94 360 m 558 360 l S
+BT /F1 10 Tf 54 358 Td 12 TL (Date) Tj ET
+endstream
+endobj
+14 0 obj
+<< /Type /Page /Parent 0 0 R /MediaBox [0 0 612 792] /Contents 13 0 R /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> >>
+endobj
+15 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R 10 0 R 12 0 R 14 0 R] /Count 6 >>
+endobj
+16 0 obj
+<< /Type /Catalog /Pages 15 0 R >>
+endobj
+xref
+0 17
+0000000000 65535 f 
+0000000009 00000 n 
+0000000079 00000 n 
+0000000154 00000 n 
+0000000707 00000 n 
+0000000843 00000 n 
+0000002615 00000 n 
+0000002751 00000 n 
+0000003878 00000 n 
+0000004014 00000 n 
+0000005567 00000 n 
+0000005704 00000 n 
+0000006147 00000 n 
+0000006285 00000 n 
+0000007472 00000 n 
+0000007610 00000 n 
+0000007701 00000 n 
+trailer
+<< /Size 17 /Root 16 0 R >>
+startxref
+7752
+%%EOF
