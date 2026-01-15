@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.vite/
+functions/node_modules/
+dist/
+.DS_Store
+.DS_Store
+.dist/
+dist/
+functions/node_modules/
