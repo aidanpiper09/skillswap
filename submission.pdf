@@ -1,0 +1,90 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 1339 >>
+stream
+BT
+/F1 12 Tf
+72 760 Td
+(SkillSwap Development Process & System Diagram) Tj
+T*
+() Tj
+T*
+(Development process/methodology:) Tj
+T*
+(1. Align to rubric & define scope \(features, constraints, success metrics\).) Tj
+T*
+(2. Requirements & user stories \(students, mentors, admins, moderators\).) Tj
+T*
+(3. UX planning \(flows, wireframes, data model, roles & permissions\).) Tj
+T*
+(4. Architecture design \(React UI, Firebase Auth, Firestore collections\).) Tj
+T*
+(5. Iterative implementation \(feature slices with small, reviewable changes\).) Tj
+T*
+(6. Test & validate \(auth flows, session lifecycle, ratings, admin tools\).) Tj
+T*
+(7. Security & compliance checks \(data access rules, audit logging\).) Tj
+T*
+(8. Release & feedback loop \(demo, collect feedback, prioritize fixes\).) Tj
+T*
+() Tj
+T*
+(System/application diagram:) Tj
+T*
+([Students/Admins]) Tj
+T*
+(       |) Tj
+T*
+(       v) Tj
+T*
+([SkillSwap Web App: React + Vite]) Tj
+T*
+(       |  \\\\) Tj
+T*
+(       |   \\\\) Tj
+T*
+(       v    v) Tj
+T*
+([Firebase Auth]   [Firestore DB]) Tj
+T*
+(       |            |) Tj
+T*
+(       v            v) Tj
+T*
+([Session & Rating] [Profiles, Skills, Audit Logs, Messages]) Tj
+T*
+() Tj
+T*
+(Notes:) Tj
+T*
+(- Auth manages sign-in, roles, and session identity.) Tj
+T*
+(- Firestore stores profiles, skill listings, sessions, ratings, and logs.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001632 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1702
+%%EOF
