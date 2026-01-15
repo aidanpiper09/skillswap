@@ -138,6 +138,7 @@ function SectionHeader({ title, description, action }) {
 }
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const functions = getFunctions(app);
 const db = getFirestore(app);
 const functions = getFunctions(app);
 const createSessionFn = httpsCallable(functions, 'createSession');
@@ -479,6 +480,16 @@ export default function SkillSwap() {
     await callFunction('logAuditEvent', { action, ...payload });
   };
 
+  const logAuditEvent = async ({ action, targetUserId, sessionId, metadata }) => {
+    const logEvent = httpsCallable(functions, 'logAuditEvent');
+    await logEvent({
+      action,
+      targetUserId: targetUserId || null,
+      sessionId: sessionId || null,
+      metadata: metadata || null
+    });
+  };
+
   useEffect(() => {
     setSecureTransport(isSecureContext());
   }, []);
@@ -809,6 +820,9 @@ export default function SkillSwap() {
           allowRequestsFrom: 'anyone',
           allowMessagesFrom: 'participants'
         });
+        await logAuditEvent({
+          action: 'USER_REGISTERED',
+          metadata: { email }
         const logAuditEvent = httpsCallable(functions, 'logAuditEvent');
         await logAuditEvent({
           action: 'USER_REGISTERED',
@@ -1047,6 +1061,11 @@ export default function SkillSwap() {
         participants: [user.uid, selectedUser.id],
         createdAt: Timestamp.now()
       });
+      
+      await logAuditEvent({
+        action: 'SESSION_REQUESTED',
+        sessionId: sessionDoc.id,
+        metadata: { requestedSkill: sessionSkill, providerId: selectedUser.id }
       const logAuditEvent = httpsCallable(functions, 'logAuditEvent');
       await logAuditEvent({
         action: 'SESSION_REQUESTED',
@@ -1091,6 +1110,7 @@ export default function SkillSwap() {
         checkAchievements(newCount);
       }
       
+      await logAuditEvent({
       await logAuditEvent(`SESSION_${status.toUpperCase()}`, {
         sessionId
       const updateStatus = httpsCallable(functions, 'updateSessionStatus');
@@ -1105,9 +1125,8 @@ export default function SkillSwap() {
       
       await addDoc(collection(db, 'auditLogs'), {
         action: `SESSION_${status.toUpperCase()}`,
-        userId: user.uid,
         sessionId,
-        timestamp: Timestamp.now()
+        metadata: { status }
       });
       
       setSessionFeedback({ type: 'success', message: `Session marked as ${status}.` });
@@ -1355,6 +1374,9 @@ function App() {
       await deleteUserCallable({ targetUserId: userId });
       await callFunction('deleteUser', { userId });
       await deleteDoc(doc(db, 'users', userId));
+      await logAuditEvent({
+        action: 'ADMIN_USER_DELETED',
+        targetUserId: userId
       await logAuditEvent('USER_DELETED', { targetUserId: userId });
       await logAuditEvent({ action: 'USER_DELETED', targetUserId: userId });
       await deleteUserFn({ targetUserId: userId });
