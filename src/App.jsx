@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
@@ -99,6 +100,16 @@ export default function SkillSwap() {
   
   // Search
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Clubs states
+  const [clubs, setClubs] = useState([]);
+  const [clubName, setClubName] = useState('');
+  const [clubDescription, setClubDescription] = useState('');
+  const [clubSchedule, setClubSchedule] = useState('');
+  const [editingClubId, setEditingClubId] = useState(null);
+  const [editClubName, setEditClubName] = useState('');
+  const [editClubDescription, setEditClubDescription] = useState('');
+  const [editClubSchedule, setEditClubSchedule] = useState('');
 
   const logAuditEvent = async (payload) => {
     const logAuditEventCallable = httpsCallable(functions, 'logAuditEvent');
@@ -300,6 +311,11 @@ export default function SkillSwap() {
       setAuditLogs(logsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       
       calculateStats(usersSnap.docs, sessionsSnap.docs);
+    }
+    
+    if (page === 'clubs') {
+      const clubsSnap = await getDocs(query(collection(db, 'clubs'), orderBy('createdAt', 'desc')));
+      setClubs(clubsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }
   };
 
@@ -635,6 +651,152 @@ export default function SkillSwap() {
     }
   };
 
+  const createClub = async () => {
+    if (!user) {
+      alert('Please log in to create a club.');
+      return;
+    }
+    const trimmedName = clubName.trim();
+    const trimmedDescription = clubDescription.trim();
+    const trimmedSchedule = clubSchedule.trim();
+    if (!trimmedName || !trimmedDescription) {
+      alert('Club name and description are required.');
+      return;
+    }
+    
+    try {
+      await addDoc(collection(db, 'clubs'), {
+        name: trimmedName,
+        description: trimmedDescription,
+        schedule: trimmedSchedule,
+        ownerId: user.uid,
+        ownerName: userProfile?.name || 'Unknown',
+        members: [user.uid],
+        createdAt: Timestamp.now()
+      });
+      setClubName('');
+      setClubDescription('');
+      setClubSchedule('');
+      loadUserData();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const startEditingClub = (club) => {
+    setEditingClubId(club.id);
+    setEditClubName(club.name || '');
+    setEditClubDescription(club.description || '');
+    setEditClubSchedule(club.schedule || '');
+  };
+
+  const cancelEditingClub = () => {
+    setEditingClubId(null);
+    setEditClubName('');
+    setEditClubDescription('');
+    setEditClubSchedule('');
+  };
+
+  const updateClub = async (club) => {
+    if (!user) {
+      alert('Please log in to update clubs.');
+      return;
+    }
+    const isOwner = club.ownerId === user.uid;
+    const isAdmin = userProfile?.role === 'admin';
+    if (!isOwner && !isAdmin) {
+      alert('Only the club owner or an admin can update this club.');
+      return;
+    }
+    const trimmedName = editClubName.trim();
+    const trimmedDescription = editClubDescription.trim();
+    const trimmedSchedule = editClubSchedule.trim();
+    if (!trimmedName || !trimmedDescription) {
+      alert('Club name and description are required.');
+      return;
+    }
+    
+    try {
+      await updateDoc(doc(db, 'clubs', club.id), {
+        name: trimmedName,
+        description: trimmedDescription,
+        schedule: trimmedSchedule
+      });
+      cancelEditingClub();
+      loadUserData();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const deleteClub = async (club) => {
+    if (!user) {
+      alert('Please log in to manage clubs.');
+      return;
+    }
+    const isOwner = club.ownerId === user.uid;
+    const isAdmin = userProfile?.role === 'admin';
+    if (!isOwner && !isAdmin) {
+      alert('Only the club owner or an admin can delete this club.');
+      return;
+    }
+    if (!window.confirm('Delete this club?')) return;
+    
+    try {
+      await deleteDoc(doc(db, 'clubs', club.id));
+      if (editingClubId === club.id) {
+        cancelEditingClub();
+      }
+      loadUserData();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const joinClub = async (club) => {
+    if (!user) {
+      alert('Please log in to join clubs.');
+      return;
+    }
+    if (club.members?.includes(user.uid)) {
+      alert('You are already a member of this club.');
+      return;
+    }
+    
+    try {
+      await updateDoc(doc(db, 'clubs', club.id), {
+        members: arrayUnion(user.uid)
+      });
+      loadUserData();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const leaveClub = async (club) => {
+    if (!user) {
+      alert('Please log in to update membership.');
+      return;
+    }
+    if (!club.members?.includes(user.uid)) {
+      alert('You are not a member of this club.');
+      return;
+    }
+    if (club.ownerId === user.uid) {
+      alert('Club owners cannot leave their own club. Please delete or transfer ownership.');
+      return;
+    }
+    
+    try {
+      await updateDoc(doc(db, 'clubs', club.id), {
+        members: arrayRemove(user.uid)
+      });
+      loadUserData();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex items-center justify-center">
@@ -746,6 +908,10 @@ export default function SkillSwap() {
               <button onClick={() => setPage('sessions')} className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition ${page === 'sessions' ? 'bg-blue-500 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
                 <Calendar size={20} />
                 <span>Sessions</span>
+              </button>
+              <button onClick={() => setPage('clubs')} className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition ${page === 'clubs' ? 'bg-orange-500 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
+                <Users size={20} />
+                <span>Clubs</span>
               </button>
               <button onClick={() => setPage('profile')} className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition ${page === 'profile' ? 'bg-orange-500 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
                 <User size={20} />
@@ -1107,6 +1273,166 @@ export default function SkillSwap() {
                   <p className="text-gray-500 text-center py-4">No completed sessions yet</p>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (page === 'clubs') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
+        <Navigation />
+        
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-3xl font-bold text-white">Student Clubs</h2>
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="bg-gray-800 p-6 rounded-lg border border-orange-500">
+              <h3 className="text-xl font-bold text-white mb-4">Start a Club</h3>
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  value={clubName}
+                  onChange={(e) => setClubName(e.target.value)}
+                  placeholder="Club name"
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                />
+                <textarea
+                  value={clubDescription}
+                  onChange={(e) => setClubDescription(e.target.value)}
+                  placeholder="Describe the club mission..."
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none h-28"
+                />
+                <input
+                  type="text"
+                  value={clubSchedule}
+                  onChange={(e) => setClubSchedule(e.target.value)}
+                  placeholder="Meeting schedule (optional)"
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                />
+                <button
+                  onClick={createClub}
+                  className="w-full py-3 bg-gradient-to-r from-orange-500 to-blue-500 text-white font-bold rounded-lg hover:from-orange-600 hover:to-blue-600 transition"
+                >
+                  Create Club
+                </button>
+              </div>
+            </div>
+            
+            <div className="lg:col-span-2 space-y-4">
+              {clubs.map(club => {
+                const isOwner = club.ownerId === user?.uid;
+                const isAdmin = userProfile?.role === 'admin';
+                const isMember = club.members?.includes(user?.uid);
+                const isEditing = editingClubId === club.id;
+                
+                return (
+                  <div key={club.id} className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="text-xl font-bold text-white">{club.name}</h3>
+                        <p className="text-sm text-gray-400">Owner: {club.ownerName || 'Unknown'}</p>
+                      </div>
+                      <div className="text-sm text-gray-400">{club.members?.length || 0} members</div>
+                    </div>
+                    
+                    {isEditing ? (
+                      <div className="mt-4 space-y-3">
+                        <input
+                          type="text"
+                          value={editClubName}
+                          onChange={(e) => setEditClubName(e.target.value)}
+                          className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                        />
+                        <textarea
+                          value={editClubDescription}
+                          onChange={(e) => setEditClubDescription(e.target.value)}
+                          className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none h-24"
+                        />
+                        <input
+                          type="text"
+                          value={editClubSchedule}
+                          onChange={(e) => setEditClubSchedule(e.target.value)}
+                          placeholder="Meeting schedule (optional)"
+                          className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => updateClub(club)}
+                            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm"
+                          >
+                            Save Changes
+                          </button>
+                          <button
+                            onClick={cancelEditingClub}
+                            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition text-sm"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="mt-4 text-gray-300">{club.description}</p>
+                        {club.schedule && (
+                          <p className="mt-2 text-sm text-gray-400">Schedule: {club.schedule}</p>
+                        )}
+                      </>
+                    )}
+                    
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      {(isOwner || isAdmin) && !isEditing && (
+                        <>
+                          <button
+                            onClick={() => startEditingClub(club)}
+                            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteClub(club)}
+                            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                      {!isEditing && (
+                        <>
+                          {isOwner && (
+                            <span className="px-3 py-1 rounded-full bg-orange-500 text-white text-xs">Owner</span>
+                          )}
+                          {!isOwner && isMember && (
+                            <button
+                              onClick={() => leaveClub(club)}
+                              className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition text-sm"
+                            >
+                              Leave Club
+                            </button>
+                          )}
+                          {!isOwner && !isMember && (
+                            <button
+                              onClick={() => joinClub(club)}
+                              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm"
+                            >
+                              Join Club
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {clubs.length === 0 && (
+                <div className="bg-gray-800 p-8 rounded-lg border border-gray-700 text-center text-gray-400">
+                  No clubs yet. Be the first to start one!
+                </div>
+              )}
             </div>
           </div>
         </div>
