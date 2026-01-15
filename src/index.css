@@ -14,6 +14,7 @@
   --warning: #facc15;
   --danger: #f43f5e;
   --focus: #fef08a;
+}
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
