@@ -1666,6 +1666,66 @@ function App() {
 
   if (page === 'login') {
     return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex flex-col p-4">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md border border-orange-500">
+            <h1 className="text-4xl font-bold text-center mb-2 bg-gradient-to-r from-orange-400 to-blue-400 bg-clip-text text-transparent">
+              SkillSwap
+            </h1>
+            <p className="text-gray-400 text-center mb-8">Student Talent Exchange Platform</p>
+            
+            <form onSubmit={handleAuth} className="space-y-4">
+              {isRegister && (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Full Name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                    required
+                  />
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="student">Student</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <input
+                    type="number"
+                    placeholder="Graduation Year"
+                    value={gradYear}
+                    onChange={(e) => setGradYear(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                  />
+                </>
+              )}
+              <input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                required
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                required
+              />
+              <button
+                type="submit"
+                className="w-full py-3 bg-gradient-to-r from-orange-500 to-blue-500 text-white font-bold rounded-lg hover:from-orange-600 hover:to-blue-600 transition"
+              >
+                {isRegister ? 'Register' : 'Login'}
+              </button>
+            </form>
+            
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex items-center justify-center p-4">
         <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md border border-orange-500">
           <h1 className="text-4xl font-bold text-center mb-2 bg-gradient-to-r from-orange-400 to-blue-400 bg-clip-text text-transparent">
@@ -1725,10 +1785,10 @@ function App() {
             />
             <FieldError message={authErrors.password} />
             <button
-              type="submit"
-              className="w-full py-3 bg-gradient-to-r from-orange-500 to-blue-500 text-white font-bold rounded-lg hover:from-orange-600 hover:to-blue-600 transition"
+              onClick={() => setIsRegister(!isRegister)}
+              className="w-full mt-4 text-blue-400 hover:text-blue-300 transition"
             >
-              {isRegister ? 'Register' : 'Login'}
+              {isRegister ? 'Already have an account? Login' : "Don't have an account? Register"}
             </button>
           </form>
           
@@ -1747,6 +1807,7 @@ function App() {
             BPA SkillSwap | Frisco, Texas | 2026
           </div>
         </div>
+        <Footer />
       </div>
     );
   }
@@ -1798,6 +1859,20 @@ function App() {
     </nav>
   );
 
+  const Footer = () => (
+    <footer className="border-t border-gray-700 bg-gray-900/80">
+      <div className="max-w-7xl mx-auto px-6 py-6 text-xs text-gray-400 space-y-2">
+        <p className="text-gray-300 font-semibold">Event Credits & Theme</p>
+        <p>
+          Chapter: Frisco High School BPA | Team: Avery Chen, Jordan Lee, Priya Patel, Marcus Rivera
+        </p>
+        <p>
+          School: Frisco High School | City/State: Frisco, TX | Theme: SkillSwap — Connect, Learn, Grow | Year: 2026
+        </p>
+      </div>
+    </footer>
+  );
+
   if (page === 'dashboard') {
     const filteredUsers = allUsers.filter(u => 
       u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1805,10 +1880,11 @@ function App() {
     );
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex flex-col">
         <Navigation />
         
-        <div className="max-w-7xl mx-auto p-6">
+        <div className="flex-1">
+          <div className="max-w-7xl mx-auto p-6">
           <div className="mb-8">
             <h2 className="text-3xl font-bold text-white mb-4">Welcome back, {userProfile?.name}!</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1874,16 +1950,19 @@ function App() {
                   Create account
                 </button>
         </div>
+        </div>
+        <Footer />
       </div>
     );
   }
 
   if (page === 'request-session' && selectedUser) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex flex-col">
         <Navigation />
         
-        <div className="max-w-3xl mx-auto p-6">
+        <div className="flex-1">
+          <div className="max-w-3xl mx-auto p-6">
           <button
             onClick={() => setPage('dashboard')}
             className="mb-6 text-blue-400 hover:text-blue-300 flex items-center"
@@ -1956,6 +2035,8 @@ function App() {
             </div>
           </div>
         </div>
+        </div>
+        <Footer />
       </div>
     );
   }
@@ -1966,10 +2047,11 @@ function App() {
     const completedSessions = sessions.filter(s => s.status === 'completed');
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex flex-col">
         <Navigation />
         
-        <div className="max-w-7xl mx-auto p-6">
+        <div className="flex-1">
+          <div className="max-w-7xl mx-auto p-6">
           <h2 className="text-3xl font-bold text-white mb-6">My Sessions</h2>
           <div className="mb-6">
             <FeedbackBanner feedback={sessionFeedback} />
@@ -2276,16 +2358,19 @@ function App() {
             </div>
           </div>
         </div>
+        </div>
+        <Footer />
       </div>
     );
   }
 
   if (page === 'messages' && selectedSession) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex flex-col">
         <Navigation />
         
-        <div className="max-w-4xl mx-auto p-6">
+        <div className="flex-1">
+          <div className="max-w-4xl mx-auto p-6">
           <button
             onClick={() => {
               setPage('sessions');
@@ -2394,6 +2479,8 @@ function App() {
             <FieldError message={messageErrors.newMessage} />
           </div>
         </div>
+        </div>
+        <Footer />
       </div>
     );
   }
@@ -2402,10 +2489,11 @@ function App() {
     const isRatingAllowed = selectedSession.status === 'completed' && selectedSession.participants?.includes(user.uid);
     const hasRatedSession = ratedSessionIds.includes(selectedSession.id);
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex flex-col">
         <Navigation />
         
-        <div className="max-w-3xl mx-auto p-6">
+        <div className="flex-1">
+          <div className="max-w-3xl mx-auto p-6">
           <button
             onClick={() => {
               setPage('sessions');
@@ -2476,16 +2564,19 @@ function App() {
             </button>
           </div>
         </div>
+        </div>
+        <Footer />
       </div>
     );
   }
 
   if (page === 'profile') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex flex-col">
         <Navigation />
         
-        <div className="max-w-4xl mx-auto p-6">
+        <div className="flex-1">
+          <div className="max-w-4xl mx-auto p-6">
           <div className="bg-gray-800 p-8 rounded-lg border border-orange-500 mb-6">
             <h2 className="text-2xl font-bold text-white mb-6">My Profile</h2>
             <div className="mb-4">
@@ -2881,16 +2972,19 @@ function App() {
             <FieldError message={profileErrors.clubs} />
           </div>
         </div>
+        </div>
+        <Footer />
       </div>
     );
   }
 
   if (page === 'admin' && isAdmin) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex flex-col">
         <Navigation />
         
-        <div className="max-w-7xl mx-auto p-6">
+        <div className="flex-1">
+          <div className="max-w-7xl mx-auto p-6">
           <h2 className="text-3xl font-bold text-white mb-6 flex items-center">
             <Shield className="mr-3 text-orange-400" />
             Admin Dashboard
@@ -3232,6 +3326,13 @@ function App() {
             </div>
           </div>
         </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  return null;
         <div className="footer-links">
           <a href="https://example.com">Privacy</a>
           <a href="https://example.com">Help center</a>
