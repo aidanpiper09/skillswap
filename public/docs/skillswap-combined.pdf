@@ -1,0 +1,87 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R /Resources << /Font << /F1 7 0 R >> >> >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>
+endobj
+5 0 obj
+<< /Length 715 >>
+stream
+BT
+/F1 18 Tf
+22 TL
+72 750 Td
+(Works Cited) Tj
+ET
+BT
+/F1 12 Tf
+16 TL
+72 710 Td
+(Business Professionals of America. "Competitive Events Release Forms." Business Professionals of America,) Tj
+T*
+(https://www.bpa.org. Accessed 2025-02-15.) Tj
+T*
+(Firebase. "Firebase Documentation." Google, https://firebase.google.com/docs. Accessed 2025-02-15.) Tj
+T*
+(Google Fonts. "Inter." Google, https://fonts.google.com/specimen/Inter. Accessed 2025-02-15.) Tj
+T*
+(Lucide. "Lucide React Icons." Lucide, https://lucide.dev/icons. Accessed 2025-02-15.) Tj
+T*
+(React. "React Documentation." Meta, https://react.dev. Accessed 2025-02-15.) Tj
+T*
+(Vite. "Vite Documentation." Vite Team, https://vitejs.dev. Accessed 2025-02-15.) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Length 388 >>
+stream
+BT
+/F1 18 Tf
+22 TL
+72 750 Td
+(BPA Release Forms) Tj
+ET
+BT
+/F1 12 Tf
+16 TL
+72 710 Td
+(The following release forms are included for submission with this project:) Tj
+T*
+() Tj
+T*
+(1. BPA Competitive Events Release Form \(Student\)) Tj
+T*
+(2. BPA Competitive Events Release Form \(Parent/Guardian\)) Tj
+T*
+() Tj
+T*
+(Signatures and dates are on file with the local BPA chapter advisor.) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000000373 00000 n 
+0000001138 00000 n 
+0000001576 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1646
+%%EOF

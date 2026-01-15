@@ -40,6 +40,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { Calendar, User, Award, MessageCircle, Users, BarChart3, Shield, LogOut, Search, Star, Clock, CheckCircle, XCircle, TrendingUp, Home, BookOpen } from 'lucide-react';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onIdTokenChanged, getIdTokenResult } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
@@ -372,6 +373,33 @@ const ACHIEVEMENTS = [
   { id: 'five_star', name: 'Perfect Rating', description: 'Receive a 5-star rating', icon: '⭐' },
   { id: 'teacher', name: 'Master Teacher', description: 'Teach 5 different skills', icon: '👨‍🏫' },
   { id: 'learner', name: 'Curious Mind', description: 'Learn 5 different skills', icon: '📚' }
+];
+
+const WORKS_CITED_ENTRIES = [
+  {
+    id: 'bpa-release',
+    citation: 'Business Professionals of America. “Competitive Events Release Forms.” Business Professionals of America, https://www.bpa.org. Accessed 2025-02-15.'
+  },
+  {
+    id: 'firebase',
+    citation: 'Firebase. “Firebase Documentation.” Google, https://firebase.google.com/docs. Accessed 2025-02-15.'
+  },
+  {
+    id: 'inter-font',
+    citation: 'Google Fonts. “Inter.” Google, https://fonts.google.com/specimen/Inter. Accessed 2025-02-15.'
+  },
+  {
+    id: 'lucide',
+    citation: 'Lucide. “Lucide React Icons.” Lucide, https://lucide.dev/icons. Accessed 2025-02-15.'
+  },
+  {
+    id: 'react',
+    citation: 'React. “React Documentation.” Meta, https://react.dev. Accessed 2025-02-15.'
+  },
+  {
+    id: 'vite',
+    citation: 'Vite. “Vite Documentation.” Vite Team, https://vitejs.dev. Accessed 2025-02-15.'
+  }
 ];
 
 export default function SkillSwap() {
@@ -1806,6 +1834,12 @@ function App() {
           <div className="mt-8 text-center text-xs text-gray-500">
             BPA SkillSwap | Frisco, Texas | 2026
           </div>
+          <button
+            onClick={() => setPage('works-cited')}
+            className="mt-4 w-full text-sm text-blue-400 hover:text-blue-300 transition"
+          >
+            View Works Cited
+          </button>
         </div>
         <Footer />
       </div>
@@ -1848,6 +1882,14 @@ function App() {
             </button>
           )}
         </div>
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={() => setPage('works-cited')}
+            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gray-700 text-gray-200 hover:bg-gray-600 transition"
+          >
+            <BookOpen size={18} />
+            <span>Works Cited</span>
+          </button>
         <div className="app-nav__right flex items-center space-x-4">
           <span className="text-gray-300">{userProfile?.name}</span>
           <button onClick={handleLogout} className="flex items-center space-x-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">
@@ -3328,6 +3370,59 @@ function App() {
         </div>
         </div>
         <Footer />
+      </div>
+    );
+  }
+
+  if (page === 'works-cited') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
+        <Navigation />
+        <div className="max-w-4xl mx-auto p-6">
+          <button
+            onClick={() => {
+              if (!userProfile) {
+                setPage('login');
+              } else if (userProfile.role === 'admin') {
+                setPage('admin');
+              } else {
+                setPage('dashboard');
+              }
+            }}
+            className="mb-6 text-blue-400 hover:text-blue-300 flex items-center"
+          >
+            ← Back
+          </button>
+          <div className="bg-gray-800 p-8 rounded-lg border border-blue-500">
+            <h2 className="text-3xl font-bold text-white mb-6 flex items-center">
+              <BookOpen className="mr-3 text-blue-400" />
+              Works Cited
+            </h2>
+            <p className="text-gray-300 mb-6">
+              All external assets used in this project, including icons, fonts, and frameworks, are cited below in MLA format.
+            </p>
+            <div className="space-y-4 text-gray-200">
+              {WORKS_CITED_ENTRIES.map(entry => (
+                <p key={entry.id} className="works-cited-entry">
+                  {entry.citation}
+                </p>
+              ))}
+            </div>
+            <div className="mt-8 border-t border-gray-700 pt-6">
+              <h3 className="text-xl font-bold text-white mb-2">Combined PDF (Works Cited + BPA Release Forms)</h3>
+              <p className="text-gray-400 mb-4">
+                Download the combined PDF that includes the Works Cited page and BPA release forms.
+              </p>
+              <a
+                href="/docs/skillswap-combined.pdf"
+                className="inline-flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
+                download
+              >
+                Download Combined PDF
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
