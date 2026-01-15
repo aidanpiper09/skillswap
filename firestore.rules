@@ -16,6 +16,16 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    function sessionDoc(sessionId) {
+      return get(/databases/$(database)/documents/sessions/$(sessionId));
+    }
+
+    function isSessionParticipant(sessionId) {
+      return isSignedIn() && sessionDoc(sessionId).data.participants.hasAny([request.auth.uid]);
     function userDoc(uid) {
       return get(/databases/$(database)/documents/users/$(uid));
     }
@@ -35,6 +45,28 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role;
+      allow delete: if false;
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if isSignedIn()
+        && (isAdmin() || resource.data.participants.hasAny([request.auth.uid]));
+      allow create: if isSignedIn()
+        && request.resource.data.requesterId == request.auth.uid
+        && request.resource.data.participants.hasAny([request.auth.uid])
+        && request.resource.data.status == 'pending';
+      allow update, delete: if false;
+    }
+
+    match /messages/{messageId} {
+      allow read: if isSignedIn()
+        && (isAdmin() || isSessionParticipant(resource.data.sessionId));
+      allow create: if isSignedIn() && isSessionParticipant(request.resource.data.sessionId);
+      allow update, delete: if false;
       allow create: if isOwner(userId)
         && request.resource.data.email == request.auth.token.email;
       allow update: if isOwner(userId) || isAdmin();
@@ -157,6 +189,10 @@ service cloud.firestore {
 
     match /ratings/{ratingId} {
       allow read: if isSignedIn()
+        && (isAdmin()
+          || request.auth.uid == resource.data.raterId
+          || request.auth.uid == resource.data.rateeId);
+      allow create, update, delete: if false;
         && (request.auth.uid == resource.data.raterId
           || request.auth.uid == resource.data.rateeId);
       allow create: if isSignedIn()
@@ -280,6 +316,12 @@ service cloud.firestore {
 
     match /auditLogs/{logId} {
       allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /clubs/{clubId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if false;
       allow create: if isSignedIn()
         && (request.resource.data.userId == request.auth.uid || isAdmin());
       allow update, delete: if false;

@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, getIdTokenResult } from 'firebase/auth';
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -96,6 +99,7 @@ const ACHIEVEMENTS = [
 export default function SkillSwap() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState('login');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -172,11 +176,27 @@ export default function SkillSwap() {
 
   const updateSessionStatusCallable = httpsCallable(functions, 'updateSessionStatus');
 
+  const callFunction = async (name, data) => {
+    const callable = httpsCallable(functions, name);
+    const result = await callable(data);
+    return result.data;
+  };
+
+  const logAuditEvent = async (action, payload = {}) => {
+    await callFunction('logAuditEvent', { action, ...payload });
+  };
+
   useEffect(() => {
     const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
         const tokenResult = await getIdTokenResult(currentUser, true);
+        const adminClaim = tokenResult.claims?.admin === true;
+        setIsAdmin(adminClaim);
+        const profileDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (profileDoc.exists()) {
+          setUserProfile(profileDoc.data());
+          setPage(adminClaim ? 'admin' : 'dashboard');
         const hasAdminClaim = tokenResult?.claims?.admin === true;
         setIsAdmin(hasAdminClaim);
         const profileDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -200,7 +220,7 @@ export default function SkillSwap() {
     if (user && userProfile) {
       loadUserData();
     }
-  }, [user, userProfile, page]);
+  }, [user, userProfile, page, isAdmin]);
 
   useEffect(() => {
     if (userProfile && !profileInitialized) {
@@ -579,6 +599,7 @@ export default function SkillSwap() {
         participants: [user.uid, selectedUser.id],
         createdAt: Timestamp.now()
       });
+      await logAuditEvent('SESSION_REQUESTED', { sessionId: sessionDoc.id });
       
       await logAuditEvent('SESSION_REQUESTED', {
         sessionId: sessionDoc.id,
@@ -604,6 +625,7 @@ export default function SkillSwap() {
   const updateSessionStatus = async (sessionId, status) => {
     setSessionFeedback(null);
     try {
+      await callFunction('updateSessionStatus', { sessionId, status });
       await updateSessionStatusCallable({ sessionId, status });
       const response = await updateSessionStatusFn({ sessionId, status });
       
@@ -690,6 +712,8 @@ export default function SkillSwap() {
       return;
     }
     try {
+      await callFunction('submitRating', { sessionId, score: ratingScore, comment: ratingComment });
+      alert('Rating submitted!');
       const session = sessions.find(s => s.id === sessionId);
       if (!session) {
         alert('Session not found.');
@@ -799,6 +823,7 @@ export default function SkillSwap() {
     if (!window.confirm('Delete this user?')) return;
     
     try {
+      await callFunction('deleteUser', { userId });
       await deleteDoc(doc(db, 'users', userId));
       await logAuditEvent('USER_DELETED', { targetUserId: userId });
       await logAuditEvent({ action: 'USER_DELETED', targetUserId: userId });
@@ -1061,7 +1086,7 @@ export default function SkillSwap() {
           <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-400 to-blue-400 bg-clip-text text-transparent">
             SkillSwap
           </h1>
-          {userProfile?.role === 'student' && (
+          {!isAdmin && (
             <div className="flex space-x-4">
               <button onClick={() => setPage('dashboard')} className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition ${page === 'dashboard' ? 'bg-orange-500 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
                 <Home size={20} />
