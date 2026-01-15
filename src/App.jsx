@@ -89,6 +89,7 @@ export default function SkillSwap() {
   // Rating states
   const [ratingScore, setRatingScore] = useState(5);
   const [ratingComment, setRatingComment] = useState('');
+  const [ratedSessionIds, setRatedSessionIds] = useState([]);
   const [ratingErrors, setRatingErrors] = useState({});
   const [ratingFeedback, setRatingFeedback] = useState(null);
   
@@ -296,6 +297,12 @@ export default function SkillSwap() {
       const sessionsSnap = await getDocs(sessionsQuery);
       setSessions(sessionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       
+      const ratingsSnap = await getDocs(query(
+        collection(db, 'ratings'),
+        where('raterId', '==', user.uid)
+      ));
+      setRatedSessionIds(ratingsSnap.docs.map(doc => doc.data().sessionId));
+
       const usersSnap = await getDocs(collection(db, 'users'));
       setAllUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.id !== user.uid && u.role === 'student'));
     }
@@ -559,6 +566,18 @@ export default function SkillSwap() {
     }
   };
 
+  const normalizeRatingScore = (score) => {
+    const numericScore = Math.round(Number(score));
+    if (Number.isNaN(numericScore)) return null;
+    return Math.min(5, Math.max(1, numericScore));
+  };
+
+  const sanitizeRatingComment = (comment) => {
+    if (!comment) return '';
+    const withoutTags = comment.replace(/<[^>]*>/g, '');
+    return withoutTags.replace(/\s+/g, ' ').trim().slice(0, 500);
+  };
+
   const submitRating = async (sessionId) => {
     setRatingFeedback(null);
     if (!validateRatingForm()) {
@@ -567,18 +586,50 @@ export default function SkillSwap() {
     }
     try {
       const session = sessions.find(s => s.id === sessionId);
+      if (!session) {
+        alert('Session not found.');
+        return;
+      }
+      if (session.status !== 'completed') {
+        alert('Ratings can only be submitted for completed sessions.');
+        return;
+      }
+      if (!session.participants?.includes(user.uid)) {
+        alert('Only session participants can submit ratings.');
+        return;
+      }
+
+      const ratingScoreValue = normalizeRatingScore(ratingScore);
+      if (!ratingScoreValue) {
+        alert('Please select a rating between 1 and 5.');
+        return;
+      }
+
+      const sanitizedComment = sanitizeRatingComment(ratingComment);
+
+      const ratingQuery = query(
+        collection(db, 'ratings'),
+        where('sessionId', '==', sessionId),
+        where('raterId', '==', user.uid)
+      );
+      const existingRatingSnap = await getDocs(ratingQuery);
+      if (!existingRatingSnap.empty) {
+        alert('You have already rated this session.');
+        return;
+      }
+
       const rateeId = session.requesterId === user.uid ? session.providerId : session.requesterId;
       
       await addDoc(collection(db, 'ratings'), {
         sessionId,
         raterId: user.uid,
         rateeId,
-        score: ratingScore,
-        comment: ratingComment,
+        score: ratingScoreValue,
+        comment: sanitizedComment,
         createdAt: Timestamp.now()
       });
       
-      if (ratingScore === 5) {
+      if (ratingScoreValue === 5) {
         const rateeProfile = await getDoc(doc(db, 'users', rateeId));
         if (rateeProfile.exists() && !rateeProfile.data().achievements?.includes('five_star')) {
           await updateDoc(doc(db, 'users', rateeId), {
@@ -591,6 +642,7 @@ export default function SkillSwap() {
       setRatingScore(5);
       setRatingComment('');
       setSelectedSession(null);
+      setRatedSessionIds(prev => (prev.includes(sessionId) ? prev : [...prev, sessionId]));
       setRatingErrors({});
       loadUserData();
     } catch (error) {
@@ -1257,15 +1309,23 @@ export default function SkillSwap() {
                     <p className="text-xs text-gray-500 mt-2">
                       {session.startTime?.toDate?.()?.toLocaleDateString()}
                     </p>
+                    {ratedSessionIds.includes(session.id) && (
+                      <p className="text-xs text-green-400 mt-2">Rating submitted</p>
+                    )}
                     <button
                       onClick={() => {
                         setSelectedSession(session);
                         setPage('rate-session');
                       }}
-                      className="w-full mt-3 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 transition text-sm flex items-center justify-center"
+                      disabled={ratedSessionIds.includes(session.id)}
+                      className={`w-full mt-3 py-2 rounded text-sm flex items-center justify-center transition ${
+                        ratedSessionIds.includes(session.id)
+                          ? 'bg-gray-600 text-gray-300 cursor-not-allowed'
+                          : 'bg-yellow-500 text-white hover:bg-yellow-600'
+                      }`}
                     >
                       <Star size={16} className="mr-1" />
-                      Rate Session
+                      {ratedSessionIds.includes(session.id) ? 'Rated' : 'Rate Session'}
                     </button>
                   </div>
                 ))}
@@ -1504,6 +1564,8 @@ export default function SkillSwap() {
   }
 
   if (page === 'rate-session' && selectedSession) {
+    const isRatingAllowed = selectedSession.status === 'completed' && selectedSession.participants?.includes(user.uid);
+    const hasRatedSession = ratedSessionIds.includes(selectedSession.id);
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
         <Navigation />
@@ -1531,6 +1593,13 @@ export default function SkillSwap() {
                 With: {selectedSession.requesterId === user.uid ? selectedSession.providerName : selectedSession.requesterName}
               </p>
             </div>
+
+            {(!isRatingAllowed || hasRatedSession) && (
+              <div className="mb-6 rounded-lg border border-red-500 bg-red-500/10 p-4 text-sm text-red-200">
+                {!isRatingAllowed && <p>You can only rate completed sessions you participated in.</p>}
+                {hasRatedSession && <p>You have already rated this session.</p>}
+              </div>
+            )}
             
             <div className="mb-6">
               <label className="block text-gray-400 mb-3">Rating</label>
@@ -1561,7 +1630,12 @@ export default function SkillSwap() {
             
             <button
               onClick={() => submitRating(selectedSession.id)}
-              className="w-full py-3 bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-bold rounded-lg hover:from-yellow-600 hover:to-orange-600 transition"
+              disabled={!isRatingAllowed || hasRatedSession}
+              className={`w-full py-3 text-white font-bold rounded-lg transition ${
+                !isRatingAllowed || hasRatedSession
+                  ? 'bg-gray-600 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600'
+              }`}
             >
               Submit Rating
             </button>
