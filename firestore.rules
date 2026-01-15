@@ -38,6 +38,9 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isAdmin() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     function validSkillName(name) {
       return name is string && name.matches('^[A-Za-z0-9 .&+\\'\\-]{2,40}$');
     }
@@ -111,6 +114,10 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).changedKeys()
+          .hasOnly(['bio', 'offeredSkills', 'soughtSkills']);
       allow create: if isSignedIn() && request.auth.uid == userId;
       allow update: if isSignedIn()
         && request.auth.uid == userId
@@ -119,6 +126,15 @@ service cloud.firestore {
     }
 
     match /sessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.requesterId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /ratings/{ratingId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if false;
       allow read: if isSignedIn()
         && (isAdmin() || resource.data.participants.hasAny([request.auth.uid]));
       allow create: if isSignedIn()
@@ -284,6 +300,10 @@ service cloud.firestore {
 
     match /auditLogs/{logId} {
       allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /messages/{messageId} {
       allow create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
@@ -413,6 +433,14 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /clubs/{clubId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+
+      match /members/{memberId} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
     match /ratings/{ratingId} {
     match /messages/{messageId} {
       allow read: if isSignedIn();

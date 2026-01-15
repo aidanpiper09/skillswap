@@ -809,6 +809,10 @@ export default function SkillSwap() {
           allowRequestsFrom: 'anyone',
           allowMessagesFrom: 'participants'
         });
+        const logAuditEvent = httpsCallable(functions, 'logAuditEvent');
+        await logAuditEvent({
+          action: 'USER_REGISTERED',
+          targetUserId: userCred.user.uid
         await logAuditEvent('USER_REGISTERED', { targetUserId: userCred.user.uid });
         await addDoc(collection(db, 'auditLogs'), {
           action: 'USER_REGISTERED',
@@ -1043,6 +1047,11 @@ export default function SkillSwap() {
         participants: [user.uid, selectedUser.id],
         createdAt: Timestamp.now()
       });
+      const logAuditEvent = httpsCallable(functions, 'logAuditEvent');
+      await logAuditEvent({
+        action: 'SESSION_REQUESTED',
+        sessionId: sessionDoc.id,
+        targetUserId: selectedUser.id
       await logAuditEvent('SESSION_REQUESTED', { sessionId: sessionDoc.id });
       
       await logAuditEvent('SESSION_REQUESTED', {
@@ -1070,6 +1079,8 @@ export default function SkillSwap() {
   const updateSessionStatus = async (sessionId, status) => {
     setSessionFeedback(null);
     try {
+      const changeSessionStatus = httpsCallable(functions, 'changeSessionStatus');
+      await changeSessionStatus({ sessionId, status });
       await callFunction('updateSessionStatus', { sessionId, status });
       await updateSessionStatusCallable({ sessionId, status });
       const response = await updateSessionStatusFn({ sessionId, status });
@@ -1160,6 +1171,8 @@ export default function SkillSwap() {
       return;
     }
     try {
+      const submitRatingFn = httpsCallable(functions, 'submitRating');
+      await submitRatingFn({
       await callFunction('submitRating', { sessionId, score: ratingScore, comment: ratingComment });
       alert('Rating submitted!');
       const session = sessions.find(s => s.id === sessionId);
@@ -1204,9 +1217,11 @@ export default function SkillSwap() {
       
       await addDoc(collection(db, 'ratings'), {
         sessionId,
-        raterId: user.uid,
-        rateeId,
         score: ratingScore,
+        comment: ratingComment
+      });
+      
+      alert('Rating submitted!');
         comment: ratingComment.trim(),
         score: ratingScoreValue,
         comment: sanitizedComment,
@@ -1334,6 +1349,8 @@ function App() {
     if (!window.confirm('Delete this user?')) return;
     
     try {
+      const deleteUserAccount = httpsCallable(functions, 'deleteUserAccount');
+      await deleteUserAccount({ userId });
       const deleteUserCallable = httpsCallable(functions, 'adminDeleteUser');
       await deleteUserCallable({ targetUserId: userId });
       await callFunction('deleteUser', { userId });
