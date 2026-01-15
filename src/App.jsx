@@ -1647,12 +1647,14 @@ function App() {
   }
 
   const Navigation = () => (
-    <nav className="bg-gray-800 border-b border-gray-700 px-6 py-4">
-      <div className="flex items-center justify-between max-w-7xl mx-auto">
-        <div className="flex items-center space-x-8">
+    <nav className="app-nav bg-gray-800 border-b border-gray-700 px-6 py-4">
+      <div className="app-nav__container flex items-center justify-between max-w-7xl mx-auto">
+        <div className="app-nav__left flex items-center space-x-8">
           <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-400 to-blue-400 bg-clip-text text-transparent">
             SkillSwap
           </h1>
+          {userProfile?.role === 'student' && (
+            <div className="app-nav__links flex space-x-4">
           {!isAdmin && (
             <div className="flex space-x-4">
               <button onClick={() => setPage('dashboard')} className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition ${page === 'dashboard' ? 'bg-orange-500 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
@@ -1680,7 +1682,7 @@ function App() {
             </button>
           )}
         </div>
-        <div className="flex items-center space-x-4">
+        <div className="app-nav__right flex items-center space-x-4">
           <span className="text-gray-300">{userProfile?.name}</span>
           <button onClick={handleLogout} className="flex items-center space-x-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">
             <LogOut size={20} />
@@ -3045,7 +3047,7 @@ function App() {
               User Management
             </h3>
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="responsive-table w-full">
                 <thead>
                   <tr className="border-b border-gray-700">
                     <th className="text-left py-3 px-4 text-gray-400">Name</th>
